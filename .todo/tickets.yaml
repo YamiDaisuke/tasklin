@@ -64,3 +64,6 @@ tickets:
         - from: In Progress
           to: Done
           at: 2026-03-05T20:42:38.587145Z
+        - from: Done
+          to: Done
+          at: 2026-03-05T20:43:12.600229Z
