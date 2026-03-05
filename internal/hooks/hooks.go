@@ -6,27 +6,52 @@ import (
 	"path/filepath"
 )
 
-// InstallPostCommit writes the post-commit hook.
-func InstallPostCommit(gitDir, doneStatus string) error {
+// findTasklin is a shell snippet that locates the tasklin binary.
+// It checks PATH first, then common Go install locations, so the hook works
+// even when git runs with a minimal environment that excludes ~/go/bin.
+const findTasklin = `
+TASKLIN=$(command -v tasklin 2>/dev/null)
+if [ -z "$TASKLIN" ]; then
+  for _dir in "$HOME/go/bin" "$HOME/.local/bin" "/usr/local/bin"; do
+    if [ -x "$_dir/tasklin" ]; then
+      TASKLIN="$_dir/tasklin"
+      break
+    fi
+  done
+fi
+if [ -z "$TASKLIN" ]; then
+  echo "tasklin not found, skipping ticket transition" >&2
+  exit 0
+fi
+`
+
+// InstallCommitMsg writes the commit-msg hook.
+// Using commit-msg (not post-commit) means the ticket update is staged before
+// git finalises the commit object, so the change lands in the same commit.
+func InstallCommitMsg(gitDir, doneStatus string) error {
 	script := fmt.Sprintf(`#!/bin/sh
-MSG=$(git log -1 --pretty=%%B)
+MSG=$(cat "$1")
 if echo "$MSG" | grep -qE '^\[([0-9]+)\]'; then
   TICKET_ID=$(echo "$MSG" | grep -oE '^\[([0-9]+)\]' | tr -d '[]')
-  tasklin _transition "$TICKET_ID" "%s"
+%s
+  "$TASKLIN" _transition "$TICKET_ID" "%s" && git add .todo/
 fi
-`, doneStatus)
-	return writeHook(gitDir, "post-commit", script)
+`, findTasklin, doneStatus)
+	return writeHook(gitDir, "commit-msg", script)
 }
 
 // InstallPostMerge writes the post-merge hook.
+// After transitioning the ticket it amends the merge commit so the .todo/
+// change is recorded in the same commit rather than requiring a follow-up one.
 func InstallPostMerge(gitDir, doneStatus string) error {
 	script := fmt.Sprintf(`#!/bin/sh
 BRANCH=$(git reflog | awk 'NR==1{print $6}' | sed 's/.*\///')
 if echo "$BRANCH" | grep -qE '\[([0-9]+)\]'; then
   TICKET_ID=$(echo "$BRANCH" | grep -oE '\[([0-9]+)\]' | tr -d '[]')
-  tasklin _transition "$TICKET_ID" "%s"
+%s
+  "$TASKLIN" _transition "$TICKET_ID" "%s" && git add .todo/ && git commit --amend --no-edit --no-verify
 fi
-`, doneStatus)
+`, findTasklin, doneStatus)
 	return writeHook(gitDir, "post-merge", script)
 }
 

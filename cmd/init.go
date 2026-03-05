@@ -66,13 +66,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 				doneStatus = cfg.DefaultDoneStatus
 			}
 			gitDir := internalgit.GitDir(gitRoot)
-			if err := hooks.InstallPostCommit(gitDir, doneStatus); err != nil {
+			if err := hooks.InstallCommitMsg(gitDir, doneStatus); err != nil {
 				return err
 			}
 			if err := hooks.InstallPostMerge(gitDir, doneStatus); err != nil {
 				return err
 			}
-			fmt.Println("Installed post-commit and post-merge hooks.")
+			fmt.Println("Installed commit-msg and post-merge hooks.")
 
 			if prompt(scanner, "Also stage .todo/ folder in all commits? [Y/n]", true) {
 				if err := hooks.InstallPreCommit(gitDir); err != nil {

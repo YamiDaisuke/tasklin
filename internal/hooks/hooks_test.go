@@ -19,26 +19,32 @@ func setupGitDir(t *testing.T) string {
 	return dir
 }
 
-func TestInstallPostCommit(t *testing.T) {
+func TestInstallCommitMsg(t *testing.T) {
 	gitDir := setupGitDir(t)
-	if err := hooks.InstallPostCommit(gitDir, "Done"); err != nil {
-		t.Fatalf("InstallPostCommit: %v", err)
+	if err := hooks.InstallCommitMsg(gitDir, "Done"); err != nil {
+		t.Fatalf("InstallCommitMsg: %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(gitDir, "hooks", "post-commit"))
+	data, err := os.ReadFile(filepath.Join(gitDir, "hooks", "commit-msg"))
 	if err != nil {
-		t.Fatalf("post-commit hook not found: %v", err)
+		t.Fatalf("commit-msg hook not found: %v", err)
 	}
 	content := string(data)
 	if !strings.Contains(content, "Done") {
-		t.Error("post-commit hook missing 'Done' status")
+		t.Error("commit-msg hook missing 'Done' status")
 	}
 	if !strings.Contains(content, "_transition") {
-		t.Error("post-commit hook missing '_transition' call")
+		t.Error("commit-msg hook missing '_transition' call")
+	}
+	if !strings.Contains(content, "git add .todo/") {
+		t.Error("commit-msg hook missing 'git add .todo/' to stage the change")
+	}
+	if !strings.Contains(content, "command -v tasklin") {
+		t.Error("commit-msg hook missing PATH fallback for tasklin")
 	}
 	// Check executable bit
-	info, _ := os.Stat(filepath.Join(gitDir, "hooks", "post-commit"))
+	info, _ := os.Stat(filepath.Join(gitDir, "hooks", "commit-msg"))
 	if info.Mode()&0111 == 0 {
-		t.Error("post-commit hook is not executable")
+		t.Error("commit-msg hook is not executable")
 	}
 }
 
@@ -54,6 +60,12 @@ func TestInstallPostMerge(t *testing.T) {
 	content := string(data)
 	if !strings.Contains(content, "Done") {
 		t.Error("post-merge hook missing 'Done' status")
+	}
+	if !strings.Contains(content, "git commit --amend --no-edit --no-verify") {
+		t.Error("post-merge hook missing amend step to include change in merge commit")
+	}
+	if !strings.Contains(content, "command -v tasklin") {
+		t.Error("post-merge hook missing PATH fallback for tasklin")
 	}
 }
 
