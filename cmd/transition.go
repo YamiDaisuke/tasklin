@@ -44,6 +44,11 @@ func runTransition(cmd *cobra.Command, args []string) error {
 	found := false
 	for i, t := range tickets {
 		if t.ID == ticketID {
+
+			if t.Status == targetStatus {
+				return nil // No change needed
+			}
+
 			tr := model.Transition{From: t.Status, To: targetStatus, At: time.Now().UTC()}
 			tickets[i].Status = targetStatus
 			tickets[i].Transitions = append(tickets[i].Transitions, tr)
