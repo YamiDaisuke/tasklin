@@ -7,7 +7,49 @@ tickets:
         - from: In Progress
           to: Done
           at: 2026-03-05T15:01:55.778136Z
+        - from: Done
+          to: In Progress
+          at: 2026-03-05T18:20:45.85187Z
+        - from: In Progress
+          to: Done
+          at: 2026-03-05T18:20:48.343406Z
     - id: 4
       title: Fix git hooks
-      status: In Progress
+      status: Done
       created_at: 2026-03-05T15:59:18.581669Z
+      transitions:
+        - from: In Progress
+          to: Done
+          at: 2026-03-05T16:00:10.506177Z
+    - id: 5
+      title: Add visual indicator for empty column focus
+      status: Done
+      created_at: 2026-03-05T18:16:23.408081Z
+      transitions:
+        - from: In Progress
+          to: To Do
+          at: 2026-03-05T18:20:44.513255Z
+        - from: To Do
+          to: In Progress
+          at: 2026-03-05T18:20:45.040873Z
+        - from: In Progress
+          to: Done
+          at: 2026-03-05T18:20:45.419464Z
+        - from: Done
+          to: In Progress
+          at: 2026-03-05T18:20:47.872319Z
+        - from: In Progress
+          to: Done
+          at: 2026-03-05T18:29:33.078038Z
+    - id: 6
+      title: Auto commit if a ticket is moved to Done
+      status: To Do
+      created_at: 2026-03-05T18:29:55.75529Z
+    - id: 7
+      title: Add a config section in the TUI
+      status: To Do
+      created_at: 2026-03-05T18:30:23.566738Z
+    - id: 8
+      title: Make ticket details UI more atractive
+      status: To Do
+      created_at: 2026-03-05T18:30:44.140184Z

@@ -152,6 +152,9 @@ func (m Model) handleBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		col := m.ticketsInCol(cols[m.colIdx].Name)
 		if len(col) > 0 {
 			m.mode = viewDetail
+		} else {
+			m.mode = viewNew
+			m.inputBuf = ""
 		}
 	case "n":
 		m.mode = viewNew
@@ -167,6 +170,22 @@ func (m Model) handleBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(col) > 0 {
 			m.boardRowIdx = m.rowIdx
 			m.mode = viewMove
+			m.rowIdx = 0
+		}
+	case "shift+left":
+		col := m.ticketsInCol(cols[m.colIdx].Name)
+		if len(col) > 0 && m.colIdx > 0 {
+			m.boardRowIdx = m.rowIdx
+			m.moveSelected(m.statuses[m.colIdx-1].Name)
+			m.colIdx--
+			m.rowIdx = 0
+		}
+	case "shift+right":
+		col := m.ticketsInCol(cols[m.colIdx].Name)
+		if len(col) > 0 && m.colIdx < len(cols)-1 {
+			m.boardRowIdx = m.rowIdx
+			m.moveSelected(m.statuses[m.colIdx+1].Name)
+			m.colIdx++
 			m.rowIdx = 0
 		}
 	case "d":
@@ -407,11 +426,14 @@ func (m Model) viewBoard() string {
 
 		tickets := m.ticketsInCol(st.Name)
 
-		header := lipgloss.NewStyle().
+		headerStyle := lipgloss.NewStyle().
 			Bold(true).
 			Foreground(ansiColor(st.Color)).
-			Width(colWidth).
-			Render(fmt.Sprintf(" %s (%d)", strings.ToUpper(st.Name), len(tickets)))
+			Width(colWidth)
+		if ci == m.colIdx && m.mode == viewBoard {
+			headerStyle = headerStyle.Underline(true)
+		}
+		header := headerStyle.Render(fmt.Sprintf(" %s (%d)", strings.ToUpper(st.Name), len(tickets)))
 
 		divider := strings.Repeat("─", colWidth)
 
@@ -427,6 +449,11 @@ func (m Model) viewBoard() string {
 					style = style.Reverse(true)
 				}
 				lines = append(lines, style.Render(title))
+			} else if ri == 0 && len(tickets) == 0 && ci == m.colIdx && m.mode == viewBoard {
+				// Placeholder row for empty focused column.
+				style := lipgloss.NewStyle().Width(colWidth).PaddingLeft(1).
+					Foreground(lipgloss.Color("8")).Italic(true)
+				lines = append(lines, style.Render("New ticket..."))
 			} else {
 				lines = append(lines, lipgloss.NewStyle().Width(colWidth).Render(""))
 			}
@@ -513,6 +540,7 @@ func (m Model) viewHelpOverlay() string {
 
   ← / → or h / l   Move between columns
   ↑ / ↓ or k / j   Move between tickets
+  Shift+← / →      Move selected ticket to adjacent column
   Enter             View ticket detail
   n                 New ticket
   m                 Move ticket to another status

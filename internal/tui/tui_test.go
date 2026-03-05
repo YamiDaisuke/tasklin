@@ -33,21 +33,29 @@ func setupModel(t *testing.T) tui.Model {
 }
 
 func sendKey(m tui.Model, key string) tui.Model {
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
-	if key == "right" {
+	var msg tea.KeyMsg
+	switch key {
+	case "right":
 		msg = tea.KeyMsg{Type: tea.KeyRight}
-	} else if key == "left" {
+	case "left":
 		msg = tea.KeyMsg{Type: tea.KeyLeft}
-	} else if key == "down" {
+	case "shift+right":
+		msg = tea.KeyMsg{Type: tea.KeyRight, Alt: false, Runes: nil}
+		msg = tea.KeyMsg{Type: tea.KeyShiftRight}
+	case "shift+left":
+		msg = tea.KeyMsg{Type: tea.KeyShiftLeft}
+	case "down":
 		msg = tea.KeyMsg{Type: tea.KeyDown}
-	} else if key == "up" {
+	case "up":
 		msg = tea.KeyMsg{Type: tea.KeyUp}
-	} else if key == "enter" {
+	case "enter":
 		msg = tea.KeyMsg{Type: tea.KeyEnter}
-	} else if key == "esc" {
+	case "esc":
 		msg = tea.KeyMsg{Type: tea.KeyEsc}
-	} else if key == "backspace" {
+	case "backspace":
 		msg = tea.KeyMsg{Type: tea.KeyBackspace}
+	default:
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
 	}
 	result, _ := m.Update(msg)
 	return result.(tui.Model)
@@ -121,6 +129,110 @@ func TestHelpMode(t *testing.T) {
 	v = m.View()
 	if contains(v, "Keyboard shortcuts") {
 		t.Error("help overlay should be closed")
+	}
+}
+
+func TestShiftRight_MovesTicketToNextColumn(t *testing.T) {
+	m := setupModel(t)
+	// Start in col 0 ("To Do"), ticket [1] is there.
+	if m.ColIdx() != 0 {
+		t.Fatalf("expected col 0, got %d", m.ColIdx())
+	}
+	m = sendKey(m, "shift+right")
+	// Ticket should now be in "In Progress"; cursor should follow to col 1.
+	if m.ColIdx() != 1 {
+		t.Errorf("after shift+right: expected col 1, got %d", m.ColIdx())
+	}
+	// "To Do" column should now be empty in the view.
+	v := m.View()
+	if !contains(v, "TO DO (0)") {
+		t.Error("expected TO DO column to be empty after shift+right")
+	}
+	if !contains(v, "IN PROGRESS (2)") {
+		t.Error("expected IN PROGRESS column to have 2 tickets after shift+right")
+	}
+}
+
+func TestShiftLeft_MovesTicketToPrevColumn(t *testing.T) {
+	m := setupModel(t)
+	// Navigate to col 1 ("In Progress").
+	m = sendKey(m, "right")
+	if m.ColIdx() != 1 {
+		t.Fatalf("expected col 1, got %d", m.ColIdx())
+	}
+	m = sendKey(m, "shift+left")
+	// Ticket should now be in "To Do"; cursor should follow to col 0.
+	if m.ColIdx() != 0 {
+		t.Errorf("after shift+left: expected col 0, got %d", m.ColIdx())
+	}
+	if !contains(m.View(), "TO DO (2)") {
+		t.Error("expected TO DO column to have 2 tickets after shift+left")
+	}
+}
+
+func TestShiftLeft_NoopAtFirstColumn(t *testing.T) {
+	m := setupModel(t)
+	// Already at col 0; shift+left should not crash or change anything.
+	m = sendKey(m, "shift+left")
+	if m.ColIdx() != 0 {
+		t.Errorf("expected col 0, got %d", m.ColIdx())
+	}
+}
+
+func TestShiftRight_NoopAtLastColumn(t *testing.T) {
+	m := setupModel(t)
+	// Navigate to last column.
+	m = sendKey(m, "right")
+	m = sendKey(m, "right")
+	lastCol := m.ColIdx()
+	m = sendKey(m, "shift+right")
+	if m.ColIdx() != lastCol {
+		t.Errorf("expected col to stay at %d, got %d", lastCol, m.ColIdx())
+	}
+}
+
+func TestEmptyFocusedColumn_ShowsPlaceholder(t *testing.T) {
+	m := setupModel(t)
+	// Move ticket from col 0 to col 1, leaving col 0 empty, then go back to col 0.
+	m = sendKey(m, "shift+right")
+	m = sendKey(m, "left")
+	if m.ColIdx() != 0 {
+		t.Fatalf("expected col 0, got %d", m.ColIdx())
+	}
+	v := m.View()
+	if !contains(v, "New ticket...") {
+		t.Error("empty focused column should show 'New ticket...' placeholder")
+	}
+}
+
+func TestEmptyFocusedColumn_EnterTriggersNewTicket(t *testing.T) {
+	m := setupModel(t)
+	// Move the only ticket in col 0 away, leaving it empty.
+	m = sendKey(m, "shift+right")
+	m = sendKey(m, "left")
+	// Press Enter on the placeholder — should open the new-ticket input.
+	m = sendKey(m, "enter")
+	v := m.View()
+	if !contains(v, "New ticket title:") {
+		t.Error("Enter on empty column placeholder should open new-ticket input")
+	}
+}
+
+func TestFocusedEmptyColumn_ViewContainsHeader(t *testing.T) {
+	m := setupModel(t)
+	// Move to "Done" column (col 2) which has 1 ticket; then navigate to a
+	// column that becomes empty by moving its ticket away.
+	// Simplest: navigate to col 0 (To Do, 1 ticket), shift it right, col 0 now empty.
+	m = sendKey(m, "shift+right")
+	// col 0 is now empty and still focused (colIdx==0 before the move lands on col1).
+	// Actually shift+right moves cursor to col 1. Let's navigate back to col 0.
+	m = sendKey(m, "left")
+	if m.ColIdx() != 0 {
+		t.Fatalf("expected col 0, got %d", m.ColIdx())
+	}
+	v := m.View()
+	if !contains(v, "TO DO (0)") {
+		t.Errorf("empty focused column header not visible in view")
 	}
 }
 
