@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -95,6 +96,9 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
+// commitDoneMsg is returned after an auto-commit attempt finishes.
+type commitDoneMsg struct{ err error }
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -104,6 +108,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+
+	case commitDoneMsg:
+		if msg.err != nil {
+			m.err = msg.err
+		}
+		return m, nil
 	}
 	return m, nil
 }
@@ -175,18 +185,24 @@ func (m Model) handleBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "shift+left":
 		col := m.ticketsInCol(cols[m.colIdx].Name)
 		if len(col) > 0 && m.colIdx > 0 {
+			ticket := col[m.rowIdx]
+			targetStatus := m.statuses[m.colIdx-1].Name
 			m.boardRowIdx = m.rowIdx
-			m.moveSelected(m.statuses[m.colIdx-1].Name)
+			m.moveSelected(targetStatus)
 			m.colIdx--
 			m.rowIdx = 0
+			return m, m.autoCommitCmd(ticket, targetStatus)
 		}
 	case "shift+right":
 		col := m.ticketsInCol(cols[m.colIdx].Name)
 		if len(col) > 0 && m.colIdx < len(cols)-1 {
+			ticket := col[m.rowIdx]
+			targetStatus := m.statuses[m.colIdx+1].Name
 			m.boardRowIdx = m.rowIdx
-			m.moveSelected(m.statuses[m.colIdx+1].Name)
+			m.moveSelected(targetStatus)
 			m.colIdx++
 			m.rowIdx = 0
+			return m, m.autoCommitCmd(ticket, targetStatus)
 		}
 	case "d":
 		m.deleteSelected()
@@ -243,12 +259,38 @@ func (m Model) handleMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		targetStatus := m.statuses[m.rowIdx].Name
+		col := m.ticketsInCol(m.statuses[m.colIdx].Name)
+		var ticket model.Ticket
+		if len(col) > 0 {
+			ticket = col[m.boardRowIdx]
+		}
 		m.rowIdx = m.boardRowIdx
 		m.moveSelected(targetStatus)
 		m.mode = viewBoard
 		m.rowIdx = 0
+		return m, m.autoCommitCmd(ticket, targetStatus)
 	}
 	return m, nil
+}
+
+// autoCommitCmd returns a tea.Cmd that suspends the TUI, runs an interactive
+// git add -p, then commits if anything was staged. Returns nil if the feature
+// is disabled or conditions are not met.
+func (m Model) autoCommitCmd(ticket model.Ticket, targetStatus string) tea.Cmd {
+	if !m.cfg.AutoCommitOnDone || targetStatus != m.cfg.DefaultDoneStatus {
+		return nil
+	}
+	gitRoot := internalgit.RepoRoot(m.projectDir)
+	if gitRoot == "" {
+		return nil
+	}
+	commitMsg := fmt.Sprintf("[%d] %s", ticket.ID, ticket.Title)
+	cmd := exec.Command("sh", "-c",
+		`cd "$GIT_ROOT" && git add -p; git diff --cached --quiet || git commit -m "$COMMIT_MSG"`)
+	cmd.Env = append(os.Environ(), "GIT_ROOT="+gitRoot, "COMMIT_MSG="+commitMsg)
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return commitDoneMsg{err: err}
+	})
 }
 
 func (m Model) handleDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -620,5 +662,3 @@ func (m Model) Width() int { return m.width }
 // Height returns the terminal height tracked by the model.
 func (m Model) Height() int { return m.height }
 
-// ensure os import used
-var _ = os.Stderr

@@ -1,5 +1,6 @@
 title_limit: 0
 default_done_status: Done
+auto_commit_on_done: true
 statuses:
     - id: 1
       name: To Do

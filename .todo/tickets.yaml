@@ -43,8 +43,15 @@ tickets:
           at: 2026-03-05T18:29:33.078038Z
     - id: 6
       title: Auto commit if a ticket is moved to Done
-      status: To Do
+      status: Done
       created_at: 2026-03-05T18:29:55.75529Z
+      transitions:
+        - from: To Do
+          to: In Progress
+          at: 2026-03-05T21:01:36.435163Z
+        - from: In Progress
+          to: Done
+          at: 2026-03-05T21:02:13.910029Z
     - id: 7
       title: Add a config section in the TUI
       status: To Do
@@ -67,3 +74,7 @@ tickets:
         - from: Done
           to: Done
           at: 2026-03-05T20:43:12.600229Z
+    - id: 10
+      title: Add a make file for easy build/install
+      status: To Do
+      created_at: 2026-03-05T20:49:18.011448Z

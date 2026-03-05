@@ -30,6 +30,7 @@ type Ticket struct {
 type Config struct {
 	TitleLimit        int      `yaml:"title_limit"`
 	DefaultDoneStatus string   `yaml:"default_done_status"`
+	AutoCommitOnDone  bool     `yaml:"auto_commit_on_done"`
 	Statuses          []Status `yaml:"statuses"`
 }
 
