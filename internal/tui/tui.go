@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -20,13 +21,30 @@ import (
 type viewMode int
 
 const (
-	viewBoard  viewMode = iota
-	viewDetail          // ticket detail overlay
-	viewMove            // pick target status
-	viewNew             // type new ticket title
-	viewEdit            // edit ticket title
-	viewHelp            // help overlay
+	viewBoard      viewMode = iota
+	viewDetail              // ticket detail overlay
+	viewMove                // pick target status
+	viewNew                 // type new ticket title
+	viewEdit                // edit ticket title
+	viewHelp                // help overlay
+	viewConfig              // config settings list
+	viewConfigEdit          // editing a single config field
+	viewStatuses            // manage statuses list
+	viewStatusEdit          // editing name or color of a status
 )
+
+// cfgFieldDef describes one editable config field.
+type cfgFieldDef struct {
+	label string
+	kind  string // "bool", "string", "int"
+}
+
+var configFields = []cfgFieldDef{
+	{"Auto-commit on Done", "bool"},
+	{"Default Done status", "string"},
+	{"Title limit (0 = unlimited)", "int"},
+	{"Manage statuses", "statuses"},
+}
 
 // Model is the Bubble Tea model.
 type Model struct {
@@ -37,7 +55,12 @@ type Model struct {
 	colIdx        int      // focused column
 	rowIdx        int      // focused row within column
 	boardRowIdx   int      // rowIdx saved before entering move mode
-	mode          viewMode
+	cfgRowIdx      int      // focused row in config screen
+	statusRowIdx   int      // focused row in statuses screen
+	statusEditStep int      // 0=name, 1=color
+	statusEditNew  bool     // true when adding a new status
+	statusTmpName  string   // holds name between step 0 and 1 when adding
+	mode           viewMode
 	inputBuf   string
 	err        error
 	branch     string
@@ -129,6 +152,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case viewHelp:
 		m.mode = viewBoard
 		return m, nil
+	case viewConfig, viewConfigEdit:
+		return m.handleConfig(msg)
+	case viewStatuses, viewStatusEdit:
+		return m.handleStatuses(msg)
 	default:
 		return m.handleBoard(msg)
 	}
@@ -206,8 +233,180 @@ func (m Model) handleBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "d":
 		m.deleteSelected()
+	case "c":
+		m.mode = viewConfig
+		m.cfgRowIdx = 0
 	case "?":
 		m.mode = viewHelp
+	}
+	return m, nil
+}
+
+func (m Model) handleConfig(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Sub-mode: editing a field value.
+	if m.mode == viewConfigEdit {
+		switch msg.String() {
+		case "esc":
+			m.mode = viewConfig
+			m.inputBuf = ""
+		case "enter":
+			val := strings.TrimSpace(m.inputBuf)
+			switch m.cfgRowIdx {
+			case 1: // DefaultDoneStatus
+				if val != "" {
+					m.cfg.DefaultDoneStatus = val
+				}
+			case 2: // TitleLimit
+				if val == "" {
+					m.cfg.TitleLimit = 0
+				} else if n, err := strconv.Atoi(val); err == nil && n >= 0 {
+					m.cfg.TitleLimit = n
+				}
+			}
+			_ = m.store.WriteConfig(m.cfg)
+			m.mode = viewConfig
+			m.inputBuf = ""
+		case "backspace":
+			r := []rune(m.inputBuf)
+			if len(r) > 0 {
+				m.inputBuf = string(r[:len(r)-1])
+			}
+		default:
+			if len(msg.Runes) > 0 {
+				m.inputBuf += string(msg.Runes)
+			}
+		}
+		return m, nil
+	}
+
+	// viewConfig navigation.
+	switch msg.String() {
+	case "esc", "q", "c":
+		m.mode = viewBoard
+	case "up", "k":
+		if m.cfgRowIdx > 0 {
+			m.cfgRowIdx--
+		}
+	case "down", "j":
+		if m.cfgRowIdx < len(configFields)-1 {
+			m.cfgRowIdx++
+		}
+	case "enter", " ":
+		f := configFields[m.cfgRowIdx]
+		switch f.kind {
+		case "bool":
+			switch m.cfgRowIdx {
+			case 0:
+				m.cfg.AutoCommitOnDone = !m.cfg.AutoCommitOnDone
+			}
+			_ = m.store.WriteConfig(m.cfg)
+		case "string":
+			m.inputBuf = m.cfg.DefaultDoneStatus
+			m.mode = viewConfigEdit
+		case "int":
+			if m.cfg.TitleLimit == 0 {
+				m.inputBuf = ""
+			} else {
+				m.inputBuf = strconv.Itoa(m.cfg.TitleLimit)
+			}
+			m.mode = viewConfigEdit
+		case "statuses":
+			m.statusRowIdx = 0
+			m.mode = viewStatuses
+		}
+	}
+	return m, nil
+}
+
+func (m Model) handleStatuses(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Sub-mode: editing name or color of a status.
+	if m.mode == viewStatusEdit {
+		switch msg.String() {
+		case "esc":
+			m.mode = viewStatuses
+			m.inputBuf = ""
+		case "enter":
+			val := strings.TrimSpace(m.inputBuf)
+			if m.statusEditStep == 0 {
+				if val == "" {
+					return m, nil // name must not be empty
+				}
+				if m.statusEditNew {
+					m.statusTmpName = val
+					m.inputBuf = ""
+				} else {
+					m.updateStatusName(m.statusRowIdx, val)
+					m.inputBuf = m.statuses[m.statusRowIdx].Color
+				}
+				m.statusEditStep = 1
+			} else {
+				if m.statusEditNew {
+					m.addStatus(m.statusTmpName, val)
+					m.statusRowIdx = len(m.statuses) - 1
+				} else {
+					m.updateStatusColor(m.statusRowIdx, val)
+				}
+				_ = m.store.WriteConfig(m.cfg)
+				m.mode = viewStatuses
+				m.inputBuf = ""
+			}
+		case "backspace":
+			r := []rune(m.inputBuf)
+			if len(r) > 0 {
+				m.inputBuf = string(r[:len(r)-1])
+			}
+		default:
+			if len(msg.Runes) > 0 {
+				m.inputBuf += string(msg.Runes)
+			}
+		}
+		return m, nil
+	}
+
+	// viewStatuses navigation.
+	switch msg.String() {
+	case "esc", "q":
+		m.mode = viewConfig
+		if m.colIdx >= len(m.statuses) {
+			m.colIdx = len(m.statuses) - 1
+		}
+	case "up", "k":
+		if m.statusRowIdx > 0 {
+			m.statusRowIdx--
+		}
+	case "down", "j":
+		if m.statusRowIdx < len(m.statuses)-1 {
+			m.statusRowIdx++
+		}
+	case "shift+up":
+		if m.statusRowIdx > 0 {
+			m.swapStatusOrder(m.statusRowIdx, m.statusRowIdx-1)
+			m.statusRowIdx--
+		}
+	case "shift+down":
+		if m.statusRowIdx < len(m.statuses)-1 {
+			m.swapStatusOrder(m.statusRowIdx, m.statusRowIdx+1)
+			m.statusRowIdx++
+		}
+	case "n":
+		m.statusEditNew = true
+		m.statusEditStep = 0
+		m.inputBuf = ""
+		m.mode = viewStatusEdit
+	case "e":
+		if len(m.statuses) > 0 {
+			m.statusEditNew = false
+			m.statusEditStep = 0
+			m.inputBuf = m.statuses[m.statusRowIdx].Name
+			m.mode = viewStatusEdit
+		}
+	case "d":
+		if len(m.statuses) > 2 {
+			m.deleteStatus(m.statusRowIdx)
+			if m.statusRowIdx >= len(m.statuses) {
+				m.statusRowIdx = len(m.statuses) - 1
+			}
+		}
 	}
 	return m, nil
 }
@@ -391,6 +590,85 @@ func (m *Model) persist() {
 	_ = m.store.WriteTickets(m.tickets)
 }
 
+func (m *Model) addStatus(name, color string) {
+	maxID, maxOrder := 0, 0
+	for _, s := range m.cfg.Statuses {
+		if s.ID > maxID {
+			maxID = s.ID
+		}
+		if s.Order > maxOrder {
+			maxOrder = s.Order
+		}
+	}
+	m.cfg.Statuses = append(m.cfg.Statuses, model.Status{
+		ID:    maxID + 1,
+		Name:  name,
+		Color: color,
+		Order: maxOrder + 1,
+	})
+	m.statuses = store.SortedStatuses(m.cfg.Statuses)
+}
+
+func (m *Model) updateStatusName(idx int, name string) {
+	old := m.statuses[idx].Name
+	for k := range m.cfg.Statuses {
+		if m.cfg.Statuses[k].Name == old {
+			m.cfg.Statuses[k].Name = name
+			break
+		}
+	}
+	// Migrate tickets that reference the old status name.
+	for k := range m.tickets {
+		if m.tickets[k].Status == old {
+			m.tickets[k].Status = name
+		}
+	}
+	m.statuses = store.SortedStatuses(m.cfg.Statuses)
+	m.persist()
+}
+
+func (m *Model) updateStatusColor(idx int, color string) {
+	name := m.statuses[idx].Name
+	for k := range m.cfg.Statuses {
+		if m.cfg.Statuses[k].Name == name {
+			m.cfg.Statuses[k].Color = color
+			break
+		}
+	}
+	m.statuses = store.SortedStatuses(m.cfg.Statuses)
+}
+
+func (m *Model) deleteStatus(idx int) {
+	if len(m.statuses) <= 2 {
+		return
+	}
+	name := m.statuses[idx].Name
+	out := make([]model.Status, 0, len(m.cfg.Statuses)-1)
+	for _, s := range m.cfg.Statuses {
+		if s.Name != name {
+			out = append(out, s)
+		}
+	}
+	m.cfg.Statuses = out
+	m.statuses = store.SortedStatuses(m.cfg.Statuses)
+	_ = m.store.WriteConfig(m.cfg)
+}
+
+func (m *Model) swapStatusOrder(i, j int) {
+	nameI, nameJ := m.statuses[i].Name, m.statuses[j].Name
+	orderI, orderJ := m.statuses[i].Order, m.statuses[j].Order
+	for k := range m.cfg.Statuses {
+		switch m.cfg.Statuses[k].Name {
+		case nameI:
+			m.cfg.Statuses[k].Order = orderJ
+		case nameJ:
+			m.cfg.Statuses[k].Order = orderI
+		}
+	}
+	m.statuses = store.SortedStatuses(m.cfg.Statuses)
+	_ = m.store.WriteConfig(m.cfg)
+}
+
 // --- helpers ---
 
 func (m Model) ticketsInCol(statusName string) []model.Ticket {
@@ -430,6 +708,10 @@ func (m Model) View() string {
 		return m.viewBoard() + "\n" + m.viewInputBar("Edit title: ")
 	case viewHelp:
 		return m.viewHelpOverlay()
+	case viewConfig, viewConfigEdit:
+		return m.viewConfigScreen()
+	case viewStatuses, viewStatusEdit:
+		return m.viewStatusesScreen()
 	default:
 		return m.viewBoard()
 	}
@@ -528,7 +810,7 @@ func (m Model) viewBoard() string {
 		fmt.Sprintf(" %s backlog%s", projectName, branchInfo),
 	)
 
-	footer := " [n]ew  [d]elete  [m]ove  [e]dit  [?]help  [q]uit"
+	footer := " [n]ew  [d]elete  [m]ove  [e]dit  [c]onfig  [?]help  [q]uit"
 	if m.err != nil {
 		footer = " Error: " + m.err.Error()
 	}
@@ -577,6 +859,91 @@ func (m Model) viewInputBar(label string) string {
 	return label + m.inputBuf + "█"
 }
 
+func (m Model) viewStatusesScreen() string {
+	var sb strings.Builder
+	titleStyle := lipgloss.NewStyle().Bold(true)
+	fmt.Fprintln(&sb, titleStyle.Render("Statuses")+"  (Esc to go back)\n")
+
+	if m.mode == viewStatusEdit {
+		var label string
+		if m.statusEditStep == 0 {
+			if m.statusEditNew {
+				label = "New status name: "
+			} else {
+				label = fmt.Sprintf("Rename %q: ", m.statuses[m.statusRowIdx].Name)
+			}
+		} else {
+			name := m.statusTmpName
+			if !m.statusEditNew {
+				name = m.statuses[m.statusRowIdx].Name
+			}
+			label = fmt.Sprintf("Color for %q (ANSI name or code): ", name)
+		}
+		fmt.Fprintln(&sb, label+m.inputBuf+"█")
+		fmt.Fprintln(&sb, "\n[Enter] confirm  [Esc] cancel")
+		return sb.String()
+	}
+
+	selectedStyle := lipgloss.NewStyle().Reverse(true)
+	for i, st := range m.statuses {
+		swatch := lipgloss.NewStyle().Foreground(ansiColor(st.Color)).Render("■")
+		line := fmt.Sprintf("  %-22s %s %-10s  order %d", st.Name, swatch, st.Color, st.Order)
+		if i == m.statusRowIdx {
+			line = selectedStyle.Render(fmt.Sprintf("  %-22s %-12s  order %d", st.Name, st.Color, st.Order))
+		}
+		fmt.Fprintln(&sb, line)
+	}
+
+	deleteHint := "[d]elete"
+	if len(m.statuses) <= 2 {
+		deleteHint = "(min 2, can't delete)"
+	}
+	fmt.Fprintf(&sb, "\n[n]ew  [e]dit  %s  Shift+[↑/↓] reorder  [Esc] back\n", deleteHint)
+	return sb.String()
+}
+
+func (m Model) viewConfigScreen() string {
+	var sb strings.Builder
+	titleStyle := lipgloss.NewStyle().Bold(true)
+	fmt.Fprintln(&sb, titleStyle.Render("Configuration")+"  (Esc to save & close)\n")
+
+	selectedStyle := lipgloss.NewStyle().Reverse(true)
+	for i, f := range configFields {
+		var val string
+		switch i {
+		case 0:
+			if m.cfg.AutoCommitOnDone {
+				val = "on"
+			} else {
+				val = "off"
+			}
+		case 1:
+			val = m.cfg.DefaultDoneStatus
+		case 2:
+			if m.cfg.TitleLimit == 0 {
+				val = "unlimited"
+			} else {
+				val = strconv.Itoa(m.cfg.TitleLimit)
+			}
+		case 3:
+			val = fmt.Sprintf("%d configured →", len(m.statuses))
+		}
+
+		if m.mode == viewConfigEdit && i == m.cfgRowIdx {
+			val = m.inputBuf + "█"
+		}
+
+		line := fmt.Sprintf("  %-30s %s", f.label, val)
+		if i == m.cfgRowIdx {
+			line = selectedStyle.Render(line)
+		}
+		fmt.Fprintln(&sb, line)
+	}
+
+	fmt.Fprintln(&sb, "\n[↑/↓] navigate  [Enter/Space] toggle/edit  [Esc] save & close")
+	return sb.String()
+}
+
 func (m Model) viewHelpOverlay() string {
 	return `Keyboard shortcuts:
 
@@ -588,6 +955,7 @@ func (m Model) viewHelpOverlay() string {
   m                 Move ticket to another status
   e                 Edit ticket title
   d                 Delete ticket
+  c                 Open config settings
   ?                 This help
   q / Ctrl+C        Quit
 

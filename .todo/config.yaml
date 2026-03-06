@@ -1,9 +1,9 @@
-title_limit: 0
+title_limit: 180
 default_done_status: Done
 auto_commit_on_done: true
 statuses:
     - id: 1
-      name: To Do
+      name: Backlog
       color: red
       order: 0
     - id: 2
@@ -14,3 +14,7 @@ statuses:
       name: Done
       color: green
       order: 2
+    - id: 4
+      name: Blocked
+      color: blue
+      order: 3
