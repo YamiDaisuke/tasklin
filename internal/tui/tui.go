@@ -48,25 +48,26 @@ var configFields = []cfgFieldDef{
 
 // Model is the Bubble Tea model.
 type Model struct {
-	store      *store.Store
-	cfg        model.Config
-	tickets    []model.Ticket // runtime (branch overrides applied)
-	statuses   []model.Status // sorted
-	colIdx        int      // focused column
-	rowIdx        int      // focused row within column
-	boardRowIdx   int      // rowIdx saved before entering move mode
-	cfgRowIdx      int      // focused row in config screen
-	statusRowIdx   int      // focused row in statuses screen
-	statusEditStep int      // 0=name, 1=color
-	statusEditNew  bool     // true when adding a new status
-	statusTmpName  string   // holds name between step 0 and 1 when adding
+	store          *store.Store
+	cfg            model.Config
+	tickets        []model.Ticket // runtime (branch overrides applied)
+	statuses       []model.Status // sorted
+	colIdx         int            // focused column
+	rowIdx         int            // focused row within column
+	boardRowIdx    int            // rowIdx saved before entering move mode
+	colScroll      []int          // per-column scroll offsets
+	cfgRowIdx      int            // focused row in config screen
+	statusRowIdx   int            // focused row in statuses screen
+	statusEditStep int            // 0=name, 1=color
+	statusEditNew  bool           // true when adding a new status
+	statusTmpName  string         // holds name between step 0 and 1 when adding
 	mode           viewMode
-	inputBuf   string
-	err        error
-	branch     string
-	projectDir string
-	width      int
-	height     int
+	inputBuf       string
+	err            error
+	branch         string
+	projectDir     string
+	width          int
+	height         int
 }
 
 // New creates a TUI model for the given store, applying branch overrides.
@@ -95,6 +96,7 @@ func New(s *store.Store, projectDir string) (Model, error) {
 		cfg:        cfg,
 		tickets:    tickets,
 		statuses:   statuses,
+		colScroll:  make([]int, len(statuses)),
 		branch:     branch,
 		projectDir: projectDir,
 		width:      80,
@@ -170,20 +172,24 @@ func (m Model) handleBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.colIdx > 0 {
 			m.colIdx--
 			m.rowIdx = 0
+			m.clampScroll()
 		}
 	case "right", "l":
 		if m.colIdx < len(cols)-1 {
 			m.colIdx++
 			m.rowIdx = 0
+			m.clampScroll()
 		}
 	case "up", "k":
 		if m.rowIdx > 0 {
 			m.rowIdx--
+			m.clampScroll()
 		}
 	case "down", "j":
 		col := m.ticketsInCol(cols[m.colIdx].Name)
 		if m.rowIdx < len(col)-1 {
 			m.rowIdx++
+			m.clampScroll()
 		}
 	case "enter":
 		col := m.ticketsInCol(cols[m.colIdx].Name)
@@ -218,6 +224,7 @@ func (m Model) handleBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.moveSelected(targetStatus)
 			m.colIdx--
 			m.rowIdx = 0
+			m.clampScroll()
 			return m, m.autoCommitCmd(ticket, targetStatus)
 		}
 	case "shift+right":
@@ -229,6 +236,7 @@ func (m Model) handleBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.moveSelected(targetStatus)
 			m.colIdx++
 			m.rowIdx = 0
+			m.clampScroll()
 			return m, m.autoCommitCmd(ticket, targetStatus)
 		}
 	case "d":
@@ -607,6 +615,7 @@ func (m *Model) addStatus(name, color string) {
 		Order: maxOrder + 1,
 	})
 	m.statuses = store.SortedStatuses(m.cfg.Statuses)
+	m.colScroll = make([]int, len(m.statuses))
 }
 
 func (m *Model) updateStatusName(idx int, name string) {
@@ -651,6 +660,7 @@ func (m *Model) deleteStatus(idx int) {
 	}
 	m.cfg.Statuses = out
 	m.statuses = store.SortedStatuses(m.cfg.Statuses)
+	m.colScroll = make([]int, len(m.statuses))
 	_ = m.store.WriteConfig(m.cfg)
 }
 
@@ -670,6 +680,30 @@ func (m *Model) swapStatusOrder(i, j int) {
 }
 
 // --- helpers ---
+
+// ticketRows returns the number of visible ticket rows on the board.
+func (m Model) ticketRows() int {
+	rows := m.height - 6
+	if rows < 1 {
+		rows = 1
+	}
+	return rows
+}
+
+// clampScroll adjusts colScroll[colIdx] so that rowIdx stays visible.
+func (m *Model) clampScroll() {
+	if m.colIdx >= len(m.colScroll) {
+		return
+	}
+	vis := m.ticketRows()
+	scroll := m.colScroll[m.colIdx]
+	if m.rowIdx < scroll {
+		scroll = m.rowIdx
+	} else if m.rowIdx >= scroll+vis {
+		scroll = m.rowIdx - vis + 1
+	}
+	m.colScroll[m.colIdx] = scroll
+}
 
 func (m Model) ticketsInCol(statusName string) []model.Ticket {
 	var result []model.Ticket
@@ -733,11 +767,8 @@ func (m Model) viewBoard() string {
 	remainder := m.width - sepTotal - baseColWidth*n
 
 	// Ticket rows fill everything between the header/col-name/divider and footer.
-	// Layout rows: 1 app-header + 1 col-name + 1 divider + ticketRows + 1 footer
-	ticketRows := m.height - 4
-	if ticketRows < 1 {
-		ticketRows = 1
-	}
+	// Layout rows: 3 app-header + 1 col-name + 1 divider + ticketRows + 1 footer
+	ticketRows := m.ticketRows()
 	colHeight := 2 + ticketRows // col-name line + divider line + ticket lines
 
 	// Build each column as a slice of pre-rendered lines.
@@ -750,36 +781,82 @@ func (m Model) viewBoard() string {
 
 		tickets := m.ticketsInCol(st.Name)
 
+		statusColor := ansiColor(st.Color)
+		focused := ci == m.colIdx && m.mode == viewBoard
+
 		headerStyle := lipgloss.NewStyle().
 			Bold(true).
-			Foreground(ansiColor(st.Color)).
+			Foreground(statusColor).
 			Width(colWidth)
-		if ci == m.colIdx && m.mode == viewBoard {
+		if focused {
 			headerStyle = headerStyle.Underline(true)
 		}
 		header := headerStyle.Render(fmt.Sprintf(" %s (%d)", strings.ToUpper(st.Name), len(tickets)))
 
-		divider := strings.Repeat("─", colWidth)
+		divider := lipgloss.NewStyle().Foreground(statusColor).Render(strings.Repeat("─", colWidth))
 
 		lines := make([]string, 0, colHeight)
 		lines = append(lines, header, divider)
 
+		// Determine scroll offset for this column.
+		scrollOffset := 0
+		if ci < len(m.colScroll) {
+			scrollOffset = m.colScroll[ci]
+		}
+
+		// Scrollbar geometry — only shown when tickets overflow the viewport.
+		needsBar := len(tickets) > ticketRows
+		var thumbTop, thumbSize int
+		if needsBar {
+			thumbSize = ticketRows * ticketRows / len(tickets)
+			if thumbSize < 1 {
+				thumbSize = 1
+			}
+			maxScroll := len(tickets) - ticketRows
+			if maxScroll > 0 {
+				thumbTop = scrollOffset * (ticketRows - thumbSize) / maxScroll
+			}
+			if thumbTop+thumbSize > ticketRows {
+				thumbTop = ticketRows - thumbSize
+			}
+		}
+		barChar := func(ri int) string {
+			if !needsBar {
+				return ""
+			}
+			if ri >= thumbTop && ri < thumbTop+thumbSize {
+				return lipgloss.NewStyle().Foreground(statusColor).Render("┃")
+			}
+			return lipgloss.NewStyle().Foreground(lipgloss.Color("236")).Render("╎")
+		}
+
+		// Content width shrinks by 1 when a scrollbar is present.
+		contentWidth := colWidth
+		if needsBar {
+			contentWidth = colWidth - 1
+		}
+
 		for ri := 0; ri < ticketRows; ri++ {
-			if ri < len(tickets) {
-				t := tickets[ri]
-				title := truncate(fmt.Sprintf("[%d] %s", t.ID, t.Title), colWidth-2)
-				style := lipgloss.NewStyle().Width(colWidth).PaddingLeft(1)
-				if ci == m.colIdx && ri == m.rowIdx && m.mode == viewBoard {
-					style = style.Reverse(true)
+			ti := scrollOffset + ri // absolute ticket index
+			bar := barChar(ri)
+			if ti < len(tickets) {
+				t := tickets[ti]
+				title := truncate(fmt.Sprintf("[%d] %s", t.ID, t.Title), contentWidth-3)
+				if focused && ti == m.rowIdx {
+					indicator := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render("▌")
+					text := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")).Width(contentWidth - 1).Render(" " + title)
+					lines = append(lines, indicator+text+bar)
+				} else {
+					style := lipgloss.NewStyle().Width(contentWidth).PaddingLeft(2).Foreground(lipgloss.Color("252"))
+					lines = append(lines, style.Render(title)+bar)
 				}
-				lines = append(lines, style.Render(title))
-			} else if ri == 0 && len(tickets) == 0 && ci == m.colIdx && m.mode == viewBoard {
+			} else if ri == 0 && len(tickets) == 0 && focused {
 				// Placeholder row for empty focused column.
-				style := lipgloss.NewStyle().Width(colWidth).PaddingLeft(1).
-					Foreground(lipgloss.Color("8")).Italic(true)
-				lines = append(lines, style.Render("New ticket..."))
+				style := lipgloss.NewStyle().Width(contentWidth).PaddingLeft(2).
+					Foreground(lipgloss.Color("240")).Italic(true)
+				lines = append(lines, style.Render("New ticket...")+bar)
 			} else {
-				lines = append(lines, lipgloss.NewStyle().Width(colWidth).Render(""))
+				lines = append(lines, lipgloss.NewStyle().Width(contentWidth).Render("")+bar)
 			}
 		}
 		colLines[ci] = lines
@@ -791,7 +868,7 @@ func (m Model) viewBoard() string {
 		var sb strings.Builder
 		for ci, lines := range colLines {
 			if ci > 0 {
-				sb.WriteString("│")
+				sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Render("│"))
 			}
 			if row < len(lines) {
 				sb.WriteString(lines[row])
@@ -801,20 +878,41 @@ func (m Model) viewBoard() string {
 	}
 	board := strings.Join(boardLines, "\n")
 
-	projectName := filepath.Base(m.projectDir)
-	branchInfo := ""
-	if m.branch != "" {
-		branchInfo = "  branch: " + m.branch
-	}
-	headerLine := lipgloss.NewStyle().Bold(true).Width(m.width).Render(
-		fmt.Sprintf(" %s backlog%s", projectName, branchInfo),
+	const (
+		titleLine1 = "╔╦╗╔═╗╔═╗╦╔═╦  ╦╔╗╔"
+		titleLine2 = " ║ ╠═╣╚═╗╠╩╗║  ║║║║"
+		titleLine3 = " ╩ ╩ ╩╚═╝╩ ╩╩═╝╩╝╚╝"
 	)
-
-	footer := " [n]ew  [d]elete  [m]ove  [e]dit  [c]onfig  [?]help  [q]uit"
-	if m.err != nil {
-		footer = " Error: " + m.err.Error()
+	accentStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	barStyle := lipgloss.NewStyle().Background(lipgloss.Color("235")).Width(m.width)
+	meta := ""
+	if m.branch != "" {
+		meta += "⎇ " + m.branch
 	}
-	footerLine := lipgloss.NewStyle().Width(m.width).Render(footer)
+	headerLine := barStyle.Render(" "+accentStyle.Render(titleLine1)) + "\n" +
+		barStyle.Render(" "+accentStyle.Render(titleLine2)) + "\n" +
+		barStyle.Render(" "+accentStyle.Render(titleLine3)+"  "+dimStyle.Render(meta))
+
+	var footerContent string
+	if m.err != nil {
+		footerContent = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true).Render(" error: " + m.err.Error())
+	} else {
+		keyStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
+		sepStr := dimStyle.Render("  │  ")
+		type hint struct{ key, label string }
+		hints := []hint{{"n", "new"}, {"d", "del"}, {"m", "move"}, {"e", "edit"}, {"c", "config"}, {"?", "help"}, {"q", "quit"}}
+		parts := make([]string, len(hints))
+		for i, h := range hints {
+			parts[i] = keyStyle.Render(h.key) + " " + h.label
+		}
+		footerContent = " " + strings.Join(parts, sepStr)
+	}
+	footerLine := lipgloss.NewStyle().
+		Background(lipgloss.Color("235")).
+		Foreground(lipgloss.Color("250")).
+		Width(m.width).
+		Render(footerContent)
 
 	return headerLine + "\n" + board + "\n" + footerLine
 }
@@ -996,7 +1094,6 @@ func truncate(s string, max int) string {
 	return string(r[:max-1]) + "…"
 }
 
-
 func max(a, b int) int {
 	if a > b {
 		return a
@@ -1029,4 +1126,3 @@ func (m Model) Width() int { return m.width }
 
 // Height returns the terminal height tracked by the model.
 func (m Model) Height() int { return m.height }
-
