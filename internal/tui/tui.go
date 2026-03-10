@@ -540,7 +540,7 @@ git add -p
 # --- commit if anything is staged ---
 git diff --cached --quiet || git commit -m "$COMMIT_MSG"
 `
-	cmd := exec.Command("sh", "-c", script)
+	cmd := exec.Command("bash", "-c", script)
 	cmd.Env = append(os.Environ(), "GIT_ROOT="+gitRoot, "COMMIT_MSG="+commitMsg)
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return commitDoneMsg{err: err}

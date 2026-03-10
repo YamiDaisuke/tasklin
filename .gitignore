@@ -85,6 +85,11 @@ $RECYCLE.BIN/
 .nfs*
 
 # ========================
+# Development samples
+# ========================
+sample/
+
+# ========================
 # Environment & Secrets
 # ========================
 .env

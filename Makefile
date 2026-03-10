@@ -1,6 +1,7 @@
-MODULE  := github.com/frankcruz/tasklin
-BINARY  := tasklin
-BIN_DIR := bin
+MODULE     := github.com/frankcruz/tasklin
+BINARY     := tasklin
+BIN_DIR    := bin
+SAMPLE_DIR := sample
 
 # Injected at link time
 VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -23,7 +24,7 @@ PLATFORMS := \
 	darwin/arm64 \
 	windows/amd64
 
-.PHONY: all build build-all run test install clean help
+.PHONY: all build build-all run run-sample sample test install clean help
 
 ## all: build for the current architecture (default)
 all: build
@@ -49,6 +50,14 @@ build-all:
 ## run: build and run the application
 run: build
 	./$(BIN_DIR)/$(BINARY)
+
+## sample: generate sample data (pass CLEAN=1 to regenerate from scratch)
+sample:
+	@bash resources/gen-sample.sh $(if $(CLEAN),--clean,)
+
+## run-sample: build and run tasklin inside the sample/ directory
+run-sample: build sample
+	@cd $(SAMPLE_DIR) && ../$(BIN_DIR)/$(BINARY)
 
 ## test: run all unit tests with race detector and coverage
 test:

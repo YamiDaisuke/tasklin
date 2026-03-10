@@ -125,10 +125,30 @@ tickets:
       title: Add line wrap on ticket titles
       status: Backlog
       created_at: 2026-03-10T01:42:30.953759Z
+      transitions:
+        - from: Backlog
+          to: In Progress
+          at: 2026-03-10T02:40:42.032785Z
+        - from: In Progress
+          to: Backlog
+          at: 2026-03-10T02:50:38.614295Z
     - id: 14
       title: Add sample data
-      status: Backlog
+      status: Done
       created_at: 2026-03-10T01:43:03.830825Z
+      transitions:
+        - from: Backlog
+          to: In Progress
+          at: 2026-03-10T02:50:39.540049Z
+        - from: In Progress
+          to: Done
+          at: 2026-03-10T02:55:16.995183Z
+        - from: Done
+          to: In Progress
+          at: 2026-03-10T02:55:26.023168Z
+        - from: In Progress
+          to: Done
+          at: 2026-03-10T02:56:40.020903Z
     - id: 15
       title: Add keyboard navigation while editing ticket titles
       status: Backlog
