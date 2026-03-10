@@ -515,8 +515,32 @@ func (m Model) autoCommitCmd(ticket model.Ticket, targetStatus string) tea.Cmd {
 		return nil
 	}
 	commitMsg := fmt.Sprintf("[%d] %s", ticket.ID, ticket.Title)
-	cmd := exec.Command("sh", "-c",
-		`cd "$GIT_ROOT" && git add -p; git diff --cached --quiet || git commit -m "$COMMIT_MSG"`)
+	script := `
+cd "$GIT_ROOT"
+
+# --- new (untracked) files ---
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  printf '\033[1;33mnew file\033[0m  %s  — stage it? [y/N] ' "$f"
+  read -r ans </dev/tty
+  case "$ans" in y|Y) git add -- "$f" ;; esac
+done < <(git ls-files --others --exclude-standard)
+
+# --- deleted files ---
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  printf '\033[1;31mdeleted\033[0m   %s  — stage it? [y/N] ' "$f"
+  read -r ans </dev/tty
+  case "$ans" in y|Y) git add -- "$f" ;; esac
+done < <(git ls-files --deleted)
+
+# --- modified files (interactive patch) ---
+git add -p
+
+# --- commit if anything is staged ---
+git diff --cached --quiet || git commit -m "$COMMIT_MSG"
+`
+	cmd := exec.Command("sh", "-c", script)
 	cmd.Env = append(os.Environ(), "GIT_ROOT="+gitRoot, "COMMIT_MSG="+commitMsg)
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return commitDoneMsg{err: err}
