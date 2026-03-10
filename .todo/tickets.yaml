@@ -157,3 +157,7 @@ tickets:
       title: Add ticket types
       status: Backlog
       created_at: 2026-03-10T01:59:59.997154Z
+    - id: 17
+      title: Add max/min col size and horizontal scroll if needed
+      status: Backlog
+      created_at: 2026-03-10T02:57:43.18986Z
