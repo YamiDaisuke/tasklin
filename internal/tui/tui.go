@@ -56,6 +56,7 @@ type Model struct {
 	rowIdx         int            // focused row within column
 	boardRowIdx    int            // rowIdx saved before entering move mode
 	colScroll      []int          // per-column scroll offsets
+	committing     bool           // true while waiting to hand off to git
 	cfgRowIdx      int            // focused row in config screen
 	statusRowIdx   int            // focused row in statuses screen
 	statusEditStep int            // 0=name, 1=color
@@ -124,6 +125,12 @@ func (m Model) Init() tea.Cmd {
 // commitDoneMsg is returned after an auto-commit attempt finishes.
 type commitDoneMsg struct{ err error }
 
+// commitReadyMsg fires after the pre-commit delay so the TUI can hand off to git.
+type commitReadyMsg struct {
+	ticket model.Ticket
+	status string
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -133,6 +140,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+
+	case commitReadyMsg:
+		m.committing = false
+		return m, m.autoCommitCmd(msg.ticket, msg.status)
 
 	case commitDoneMsg:
 		if msg.err != nil {
@@ -225,7 +236,7 @@ func (m Model) handleBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.colIdx--
 			m.rowIdx = 0
 			m.clampScroll()
-			return m, m.autoCommitCmd(ticket, targetStatus)
+			return m, m.scheduleCommit(ticket, targetStatus)
 		}
 	case "shift+right":
 		col := m.ticketsInCol(cols[m.colIdx].Name)
@@ -237,7 +248,7 @@ func (m Model) handleBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.colIdx++
 			m.rowIdx = 0
 			m.clampScroll()
-			return m, m.autoCommitCmd(ticket, targetStatus)
+			return m, m.scheduleCommit(ticket, targetStatus)
 		}
 	case "d":
 		m.deleteSelected()
@@ -475,9 +486,21 @@ func (m Model) handleMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.moveSelected(targetStatus)
 		m.mode = viewBoard
 		m.rowIdx = 0
-		return m, m.autoCommitCmd(ticket, targetStatus)
+		return m, m.scheduleCommit(ticket, targetStatus)
 	}
 	return m, nil
+}
+
+// scheduleCommit sets the committing flag and returns a delayed cmd that will
+// fire commitReadyMsg after a short pause, giving the user visual feedback.
+func (m *Model) scheduleCommit(ticket model.Ticket, targetStatus string) tea.Cmd {
+	if !m.cfg.AutoCommitOnDone || targetStatus != m.cfg.DefaultDoneStatus {
+		return nil
+	}
+	m.committing = true
+	return tea.Tick(1200*time.Millisecond, func(_ time.Time) tea.Msg {
+		return commitReadyMsg{ticket: ticket, status: targetStatus}
+	})
 }
 
 // autoCommitCmd returns a tea.Cmd that suspends the TUI, runs an interactive
@@ -895,7 +918,11 @@ func (m Model) viewBoard() string {
 		barStyle.Render(" "+accentStyle.Render(titleLine3)+"  "+dimStyle.Render(meta))
 
 	var footerContent string
-	if m.err != nil {
+	if m.committing {
+		footerContent = lipgloss.NewStyle().
+			Bold(true).Foreground(lipgloss.Color("214")).
+			Render(" ⎆  preparing commit — launching git add -p ...")
+	} else if m.err != nil {
 		footerContent = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true).Render(" error: " + m.err.Error())
 	} else {
 		keyStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
