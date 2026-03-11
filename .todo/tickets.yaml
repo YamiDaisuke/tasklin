@@ -13,6 +13,12 @@ tickets:
         - from: In Progress
           to: Done
           at: 2026-03-05T18:20:48.343406Z
+        - from: Done
+          to: In Progress
+          at: 2026-03-11T01:52:36.998923Z
+        - from: In Progress
+          to: Done
+          at: 2026-03-11T01:52:54.293669Z
     - id: 4
       title: Fix git hooks
       status: Done
@@ -132,6 +138,18 @@ tickets:
         - from: In Progress
           to: Backlog
           at: 2026-03-10T02:50:38.614295Z
+        - from: Backlog
+          to: In Progress
+          at: 2026-03-11T01:46:13.186259Z
+        - from: In Progress
+          to: Done
+          at: 2026-03-11T01:52:28.199212Z
+        - from: Done
+          to: In Progress
+          at: 2026-03-11T01:58:31.547638Z
+        - from: In Progress
+          to: Backlog
+          at: 2026-03-11T01:58:33.350561Z
     - id: 14
       title: Add sample data
       status: Done
@@ -161,3 +179,22 @@ tickets:
       title: Add max/min col size and horizontal scroll if needed
       status: Backlog
       created_at: 2026-03-10T02:57:43.18986Z
+    - id: 18
+      title: Add CLAUDE.md
+      status: Done
+      created_at: 2026-03-11T01:46:12.409869Z
+      transitions:
+        - from: Backlog
+          to: In Progress
+          at: 2026-03-11T01:58:18.677973Z
+        - from: In Progress
+          to: Done
+          at: 2026-03-11T01:59:10.26381Z
+    - id: 19
+      title: Add developer guides
+      status: In Progress
+      created_at: 2026-03-11T01:58:49.848841Z
+      transitions:
+        - from: Backlog
+          to: In Progress
+          at: 2026-03-11T01:58:54.793987Z

@@ -1,6 +1,6 @@
 title_limit: 180
 default_done_status: Done
-auto_commit_on_done: true
+auto_commit_on_done: false
 statuses:
     - id: 1
       name: Backlog
