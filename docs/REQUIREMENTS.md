@@ -159,7 +159,7 @@ Built with **Bubble Tea**. Fully keyboard-driven; mouse support is optional.
 ║     CI       ║     tests    ║                        ║
 ║              ║              ║                        ║
 ╠══════════════╩══════════════╩════════════════════════╣
-║ [n]ew  [d]elete  [m]ove  [e]dit  [c]onfig  [q]uit   ║
+║ [n]ew  [d]elete  [m]ove  [e]dit  [c]onfig  [q]uit    ║
 ╚══════════════════════════════════════════════════════╝
 ```
 

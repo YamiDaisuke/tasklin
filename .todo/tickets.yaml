@@ -192,9 +192,12 @@ tickets:
           at: 2026-03-11T01:59:10.26381Z
     - id: 19
       title: Add developer guides
-      status: In Progress
+      status: Done
       created_at: 2026-03-11T01:58:49.848841Z
       transitions:
         - from: Backlog
           to: In Progress
           at: 2026-03-11T01:58:54.793987Z
+        - from: In Progress
+          to: Done
+          at: 2026-03-17T01:56:38.499637Z
