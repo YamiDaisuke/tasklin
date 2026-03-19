@@ -197,7 +197,7 @@ tickets:
           to: Done
           at: 2026-03-19T13:26:22.522666Z
     - id: 16
-      title: Add ticket types
+      title: 'feat: Add ticket types'
       status: Backlog
       created_at: 2026-03-10T01:59:59.997154Z
     - id: 17
@@ -239,3 +239,11 @@ tickets:
         - from: In Progress
           to: Done
           at: 2026-03-17T01:56:38.499637Z
+    - id: 20
+      title: 'feat: Improve forms UI'
+      status: Done
+      created_at: 2026-03-19T13:57:35.918458Z
+      transitions:
+        - from: In Progress
+          to: Done
+          at: 2026-03-19T18:53:56.736158Z

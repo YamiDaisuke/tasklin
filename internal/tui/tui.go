@@ -948,9 +948,9 @@ func (m Model) View() string {
 	case viewMove:
 		return m.viewMoveMenu()
 	case viewNew:
-		return m.viewBoard() + "\n" + m.viewInputBar("New ticket title: ")
+		return m.centeredOverlay(m.viewInputModal("New Ticket", "Title"))
 	case viewEdit:
-		return m.viewBoard() + "\n" + m.viewInputBar("Edit title: ")
+		return m.centeredOverlay(m.viewInputModal("Edit Ticket", "Title"))
 	case viewHelp:
 		return m.viewHelpOverlay()
 	case viewConfig, viewConfigEdit:
@@ -1216,40 +1216,107 @@ func (m Model) viewBoard() string {
 	return headerLine + "\n" + board + "\n" + footerLine
 }
 
-func (m Model) viewDetail() string {
-	t := m.selectedTicket()
-	if t == nil {
-		return "No ticket selected. Press Esc."
+// --- panel / overlay helpers ---
+
+// panelInnerW returns the content width (between the border │ chars) for
+// form panels, clamped to the terminal width with comfortable margins.
+func (m Model) panelInnerW() int {
+	w := m.width - 4
+	if w > 72 {
+		w = 72
 	}
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "Ticket #%d\n", t.ID)
-	fmt.Fprintf(&sb, "Title:   %s\n", t.Title)
-	fmt.Fprintf(&sb, "Status:  %s\n", t.Status)
-	fmt.Fprintf(&sb, "Created: %s\n\n", t.CreatedAt.Format("2006-01-02 15:04"))
-	if len(t.Transitions) == 0 {
-		fmt.Fprintln(&sb, "No transitions yet.")
-	} else {
-		fmt.Fprintln(&sb, "Transitions:")
-		for _, tr := range t.Transitions {
-			fmt.Fprintf(&sb, "  %s → %s  (%s)\n", tr.From, tr.To, tr.At.Format("2006-01-02 15:04"))
+	if w < 40 {
+		w = 40
+	}
+	return w - 2 // subtract the two border │ chars
+}
+
+// formPanel draws a bordered box with the title embedded in the top edge:
+//
+//	┌─ Title ──────────────┐
+//	│  row …               │
+//	└──────────────────────┘
+//
+// Each row is padded / truncated to innerW visible characters by lipgloss so
+// that ANSI colour codes inside the rows are handled correctly.
+func formPanel(title string, rows []string, innerW int) string {
+	bdr := lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	ttl := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
+	pad := lipgloss.NewStyle().Width(innerW)
+
+	titleLen := utf8.RuneCountInString(title)
+	dashes := innerW - titleLen - 4 // "─ " prefix + " " suffix
+	if dashes < 0 {
+		dashes = 0
+	}
+	top := bdr.Render("┌─ ") + ttl.Render(title) + bdr.Render(" "+strings.Repeat("─", dashes)+"┐")
+	bot := bdr.Render("└" + strings.Repeat("─", innerW) + "┘")
+
+	lines := []string{top}
+	for _, row := range rows {
+		lines = append(lines, bdr.Render("│")+pad.Render(row)+bdr.Render("│"))
+	}
+	lines = append(lines, bot)
+	return strings.Join(lines, "\n")
+}
+
+// centeredOverlay centres multi-line content horizontally and vertically.
+func (m Model) centeredOverlay(content string) string {
+	lines := strings.Split(content, "\n")
+	maxW := 0
+	for _, l := range lines {
+		if w := lipgloss.Width(l); w > maxW {
+			maxW = w
 		}
 	}
-	fmt.Fprintln(&sb, "\nPress Esc to go back.")
+	leftPad := (m.width - maxW) / 2
+	if leftPad < 0 {
+		leftPad = 0
+	}
+	topPad := (m.height - len(lines)) / 2
+	if topPad < 0 {
+		topPad = 0
+	}
+	prefix := strings.Repeat(" ", leftPad)
+	var sb strings.Builder
+	for i := 0; i < topPad; i++ {
+		sb.WriteByte('\n')
+	}
+	for i, l := range lines {
+		if i > 0 {
+			sb.WriteByte('\n')
+		}
+		sb.WriteString(prefix + l)
+	}
 	return sb.String()
 }
 
-func (m Model) viewMoveMenu() string {
-	var sb strings.Builder
-	fmt.Fprintln(&sb, "Move ticket to:")
-	for i, st := range m.statuses {
-		prefix := "  "
-		if i == m.rowIdx {
-			prefix = "> "
-		}
-		fmt.Fprintf(&sb, "%s%s\n", prefix, st.Name)
+// inputFieldRows renders the three lines of a bordered input widget sized to
+// fill the panel inner width.
+func (m Model) inputFieldRows(innerW int) []string {
+	fieldW := innerW - 4 // 2-char indent + border corners
+	if fieldW < 2 {
+		fieldW = 2
 	}
-	fmt.Fprintln(&sb, "\n[↑/↓] select  [Enter] confirm  [Esc] cancel")
-	return sb.String()
+	fb := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	// Pad cursor text to fill the field interior (fieldW minus the two spaces).
+	curText := lipgloss.NewStyle().Width(fieldW - 2).Render(m.cursorInput())
+	return []string{
+		"  " + fb.Render("┌"+strings.Repeat("─", fieldW)+"┐"),
+		"  " + fb.Render("│") + " " + curText + " " + fb.Render("│"),
+		"  " + fb.Render("└"+strings.Repeat("─", fieldW)+"┘"),
+	}
+}
+
+// panelHints renders a row of key→description pairs for the bottom of a panel.
+func panelHints(pairs [][2]string) string {
+	keySt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
+	dimSt := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	parts := make([]string, len(pairs))
+	for i, p := range pairs {
+		parts[i] = keySt.Render(p[0]) + " " + dimSt.Render(p[1])
+	}
+	return "  " + strings.Join(parts, "   ")
 }
 
 // cursorInput renders inputBuf with a block cursor at inputCursor.
@@ -1266,117 +1333,248 @@ func (m Model) cursorInput() string {
 	return before + curStyle.Render(" ")
 }
 
-func (m Model) viewInputBar(label string) string {
-	return label + m.cursorInput()
+// viewInputModal renders a centred input form used by viewNew and viewEdit.
+func (m Model) viewInputModal(title, label string) string {
+	innerW := m.panelInnerW()
+	labelSt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("252"))
+	rows := []string{
+		"",
+		"  " + labelSt.Render(label),
+	}
+	rows = append(rows, m.inputFieldRows(innerW)...)
+	rows = append(rows,
+		"",
+		panelHints([][2]string{{"Enter", "confirm"}, {"Esc", "cancel"}}),
+		"",
+	)
+	return formPanel(title, rows, innerW)
+}
+
+func (m Model) viewDetail() string {
+	t := m.selectedTicket()
+	if t == nil {
+		return "No ticket selected. Press Esc."
+	}
+	innerW := m.panelInnerW()
+	accentSt := lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	labelSt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("252"))
+	dimSt := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	sepSt := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+
+	fieldRow := func(lbl, val string) string {
+		return "  " + labelSt.Render(fmt.Sprintf("%-10s", lbl)) + " " + val
+	}
+
+	rows := []string{
+		"",
+		fieldRow("Title", t.Title),
+		fieldRow("Status", accentSt.Render(t.Status)),
+		fieldRow("Created", dimSt.Render(t.CreatedAt.Format("2006-01-02  15:04"))),
+		"",
+		"  " + sepSt.Render(strings.Repeat("─", innerW-4)),
+		"",
+	}
+	if len(t.Transitions) == 0 {
+		rows = append(rows, "  "+dimSt.Render("No transitions yet."))
+	} else {
+		for _, tr := range t.Transitions {
+			rows = append(rows, fmt.Sprintf("  %s → %s   %s",
+				tr.From, tr.To, dimSt.Render(tr.At.Format("2006-01-02  15:04"))))
+		}
+	}
+	rows = append(rows,
+		"",
+		panelHints([][2]string{{"Esc", "close"}}),
+		"",
+	)
+	return m.centeredOverlay(formPanel(fmt.Sprintf("Ticket #%d", t.ID), rows, innerW))
+}
+
+func (m Model) viewMoveMenu() string {
+	innerW := m.panelInnerW()
+	accentSt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
+	normalSt := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+
+	rows := []string{""}
+	for i, st := range m.statuses {
+		swatch := lipgloss.NewStyle().Foreground(ansiColor(st.Color)).Render("■")
+		if i == m.rowIdx {
+			rows = append(rows, "  "+accentSt.Render("▶")+" "+swatch+" "+accentSt.Render(st.Name))
+		} else {
+			rows = append(rows, "    "+swatch+" "+normalSt.Render(st.Name))
+		}
+	}
+	rows = append(rows,
+		"",
+		panelHints([][2]string{{"↑↓", "navigate"}, {"Enter", "confirm"}, {"Esc", "cancel"}}),
+		"",
+	)
+	return m.centeredOverlay(formPanel("Move Ticket", rows, innerW))
 }
 
 func (m Model) viewStatusesScreen() string {
-	var sb strings.Builder
-	titleStyle := lipgloss.NewStyle().Bold(true)
-	fmt.Fprintln(&sb, titleStyle.Render("Statuses")+"  (Esc to go back)\n")
+	innerW := m.panelInnerW()
 
 	if m.mode == viewStatusEdit {
-		var label string
+		var title, label string
 		if m.statusEditStep == 0 {
 			if m.statusEditNew {
-				label = "New status name: "
+				title, label = "New Status", "Name"
 			} else {
-				label = fmt.Sprintf("Rename %q: ", m.statuses[m.statusRowIdx].Name)
+				title = "Edit Status"
+				label = fmt.Sprintf("Rename  \"%s\"", m.statuses[m.statusRowIdx].Name)
 			}
 		} else {
 			name := m.statusTmpName
 			if !m.statusEditNew {
 				name = m.statuses[m.statusRowIdx].Name
 			}
-			label = fmt.Sprintf("Color for %q (ANSI name or code): ", name)
+			title = fmt.Sprintf("Color — %s", name)
+			label = "ANSI name or 256-colour code"
 		}
-		fmt.Fprintln(&sb, label+m.cursorInput())
-		fmt.Fprintln(&sb, "\n[Enter] confirm  [Esc] cancel")
-		return sb.String()
+		labelSt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("252"))
+		rows := []string{
+			"",
+			"  " + labelSt.Render(label),
+		}
+		rows = append(rows, m.inputFieldRows(innerW)...)
+		rows = append(rows,
+			"",
+			panelHints([][2]string{{"Enter", "confirm"}, {"Esc", "cancel"}}),
+			"",
+		)
+		return m.centeredOverlay(formPanel(title, rows, innerW))
 	}
 
-	selectedStyle := lipgloss.NewStyle().Reverse(true)
+	accentSt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
+	normalSt := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	dimSt := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+
+	rows := []string{""}
 	for i, st := range m.statuses {
 		swatch := lipgloss.NewStyle().Foreground(ansiColor(st.Color)).Render("■")
-		line := fmt.Sprintf("  %-22s %s %-10s  order %d", st.Name, swatch, st.Color, st.Order)
+		orderStr := dimSt.Render(fmt.Sprintf("order %d", st.Order))
+		name := fmt.Sprintf("%-20s", st.Name)
+		color := fmt.Sprintf("%-10s", st.Color)
 		if i == m.statusRowIdx {
-			line = selectedStyle.Render(fmt.Sprintf("  %-22s %-12s  order %d", st.Name, st.Color, st.Order))
+			rows = append(rows,
+				"  "+accentSt.Render("▶")+" "+swatch+" "+accentSt.Render(name)+" "+accentSt.Render(color)+"  "+orderStr)
+		} else {
+			rows = append(rows,
+				"    "+swatch+" "+normalSt.Render(name)+" "+dimSt.Render(color)+"  "+orderStr)
 		}
-		fmt.Fprintln(&sb, line)
 	}
 
-	deleteHint := "[d]elete"
-	if len(m.statuses) <= 2 {
-		deleteHint = "(min 2, can't delete)"
+	var hints [][2]string
+	if len(m.statuses) > 2 {
+		hints = [][2]string{{"n", "new"}, {"e", "edit"}, {"d", "delete"}, {"Shift+↑↓", "reorder"}, {"Esc", "back"}}
+	} else {
+		hints = [][2]string{{"n", "new"}, {"e", "edit"}, {"Shift+↑↓", "reorder"}, {"Esc", "back"}}
 	}
-	fmt.Fprintf(&sb, "\n[n]ew  [e]dit  %s  Shift+[↑/↓] reorder  [Esc] back\n", deleteHint)
-	return sb.String()
+	rows = append(rows, "", panelHints(hints), "")
+	return m.centeredOverlay(formPanel("Statuses", rows, innerW))
 }
 
 func (m Model) viewConfigScreen() string {
-	var sb strings.Builder
-	titleStyle := lipgloss.NewStyle().Bold(true)
-	fmt.Fprintln(&sb, titleStyle.Render("Configuration")+"  (Esc to save & close)\n")
+	innerW := m.panelInnerW()
+	accentSt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
+	labelSt := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	boldLabelSt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("252"))
+	valueSt := lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	dimSt := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
-	selectedStyle := lipgloss.NewStyle().Reverse(true)
-	for i, f := range configFields {
-		var val string
-		switch i {
-		case 0:
+	cfgVals := [...]string{
+		func() string {
 			if m.cfg.AutoCommitOnDone {
-				val = "on"
-			} else {
-				val = "off"
+				return "on"
 			}
-		case 1:
-			val = m.cfg.DefaultDoneStatus
-		case 2:
+			return "off"
+		}(),
+		m.cfg.DefaultDoneStatus,
+		func() string {
 			if m.cfg.TitleLimit == 0 {
-				val = "unlimited"
-			} else {
-				val = strconv.Itoa(m.cfg.TitleLimit)
+				return "unlimited"
 			}
-		case 3:
+			return strconv.Itoa(m.cfg.TitleLimit)
+		}(),
+		func() string {
 			if m.cfg.MinColWidth == 0 {
-				val = "auto"
-			} else {
-				val = strconv.Itoa(m.cfg.MinColWidth)
+				return "auto"
 			}
-		case 4:
-			val = fmt.Sprintf("%d configured →", len(m.statuses))
-		}
+			return strconv.Itoa(m.cfg.MinColWidth)
+		}(),
+		fmt.Sprintf("%d configured →", len(m.statuses)),
+	}
 
+	rows := []string{""}
+	for i, f := range configFields {
+		val := cfgVals[i]
 		if m.mode == viewConfigEdit && i == m.cfgRowIdx {
 			val = m.cursorInput()
 		}
-
-		line := fmt.Sprintf("  %-30s %s", f.label, val)
+		label := fmt.Sprintf("%-28s", f.label)
 		if i == m.cfgRowIdx {
-			line = selectedStyle.Render(line)
+			rows = append(rows,
+				"  "+accentSt.Render("▶")+" "+boldLabelSt.Render(label)+" "+valueSt.Render(val))
+		} else {
+			rows = append(rows,
+				"    "+labelSt.Render(label)+" "+dimSt.Render(val))
 		}
-		fmt.Fprintln(&sb, line)
 	}
+	rows = append(rows, "")
 
-	fmt.Fprintln(&sb, "\n[↑/↓] navigate  [Enter/Space] toggle/edit  [Esc] save & close")
-	return sb.String()
+	if m.mode == viewConfigEdit {
+		rows = append(rows, m.inputFieldRows(innerW)...)
+		rows = append(rows,
+			"",
+			panelHints([][2]string{{"Enter", "confirm"}, {"Esc", "cancel"}}),
+			"",
+		)
+	} else {
+		rows = append(rows,
+			panelHints([][2]string{{"↑↓", "navigate"}, {"Enter", "edit"}, {"Esc", "save & close"}}),
+			"",
+		)
+	}
+	return m.centeredOverlay(formPanel("Configuration", rows, innerW))
 }
 
 func (m Model) viewHelpOverlay() string {
-	return `Keyboard shortcuts:
+	innerW := m.panelInnerW()
+	keySt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
+	dimSt := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
-  ← / → or h / l   Move between columns
-  ↑ / ↓ or k / j   Move between tickets
-  Shift+← / →      Move selected ticket to adjacent column
-  Enter             View ticket detail
-  n                 New ticket
-  m                 Move ticket to another status
-  e                 Edit ticket title
-  d                 Delete ticket
-  c                 Open config settings
-  ?                 This help
-  q / Ctrl+C        Quit
+	type sc struct{ keys, desc string }
+	shortcuts := []sc{
+		{"← → / h l", "move between columns"},
+		{"↑ ↓ / k j", "move between tickets"},
+		{"Shift+← →", "move ticket to adjacent column"},
+		{"Enter", "view ticket detail"},
+		{"n", "new ticket"},
+		{"m", "move ticket to another status"},
+		{"e", "edit ticket title"},
+		{"d", "delete ticket"},
+		{"c", "open config"},
+		{"?", "this help"},
+		{"q / Ctrl+C", "quit"},
+	}
 
-Press any key to close.`
+	rows := []string{""}
+	for _, s := range shortcuts {
+		keyRunes := len([]rune(s.keys))
+		pad := 14 - keyRunes
+		if pad < 0 {
+			pad = 0
+		}
+		rows = append(rows,
+			"  "+keySt.Render(s.keys)+strings.Repeat(" ", pad)+"  "+dimSt.Render(s.desc))
+	}
+	rows = append(rows,
+		"",
+		panelHints([][2]string{{"any key", "close"}}),
+		"",
+	)
+	return m.centeredOverlay(formPanel("Keyboard Shortcuts", rows, innerW))
 }
 
 // --- style helpers ---

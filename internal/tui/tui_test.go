@@ -121,7 +121,7 @@ func TestHelpMode(t *testing.T) {
 	m := setupModel(t)
 	m = sendKey(m, "?")
 	v := m.View()
-	if !contains(v, "Keyboard shortcuts") {
+	if !contains(v, "Keyboard Shortcuts") {
 		t.Error("help overlay not shown")
 	}
 	// Any key closes help.
@@ -213,7 +213,7 @@ func TestEmptyFocusedColumn_EnterTriggersNewTicket(t *testing.T) {
 	// Press Enter on the placeholder — should open the new-ticket input.
 	m = sendKey(m, "enter")
 	v := m.View()
-	if !contains(v, "New ticket title:") {
+	if !contains(v, "New Ticket") {
 		t.Error("Enter on empty column placeholder should open new-ticket input")
 	}
 }
