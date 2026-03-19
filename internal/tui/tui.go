@@ -64,6 +64,7 @@ type Model struct {
 	statusTmpName  string         // holds name between step 0 and 1 when adding
 	mode           viewMode
 	inputBuf       string
+	inputCursor    int // cursor position in runes within inputBuf
 	err            error
 	branch         string
 	projectDir     string
@@ -209,15 +210,18 @@ func (m Model) handleBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.mode = viewNew
 			m.inputBuf = ""
+			m.inputCursor = 0
 		}
 	case "n":
 		m.mode = viewNew
 		m.inputBuf = ""
+		m.inputCursor = 0
 	case "e":
 		col := m.ticketsInCol(cols[m.colIdx].Name)
 		if len(col) > 0 {
 			m.mode = viewEdit
 			m.inputBuf = col[m.rowIdx].Title
+			m.inputCursor = utf8.RuneCountInString(m.inputBuf)
 		}
 	case "m":
 		col := m.ticketsInCol(cols[m.colIdx].Name)
@@ -268,6 +272,7 @@ func (m Model) handleConfig(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "esc":
 			m.mode = viewConfig
 			m.inputBuf = ""
+			m.inputCursor = 0
 		case "enter":
 			val := strings.TrimSpace(m.inputBuf)
 			switch m.cfgRowIdx {
@@ -285,15 +290,9 @@ func (m Model) handleConfig(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			_ = m.store.WriteConfig(m.cfg)
 			m.mode = viewConfig
 			m.inputBuf = ""
-		case "backspace":
-			r := []rune(m.inputBuf)
-			if len(r) > 0 {
-				m.inputBuf = string(r[:len(r)-1])
-			}
+			m.inputCursor = 0
 		default:
-			if len(msg.Runes) > 0 {
-				m.inputBuf += string(msg.Runes)
-			}
+			m.handleInputKey(msg.String(), msg.Runes)
 		}
 		return m, nil
 	}
@@ -321,6 +320,7 @@ func (m Model) handleConfig(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			_ = m.store.WriteConfig(m.cfg)
 		case "string":
 			m.inputBuf = m.cfg.DefaultDoneStatus
+			m.inputCursor = utf8.RuneCountInString(m.inputBuf)
 			m.mode = viewConfigEdit
 		case "int":
 			if m.cfg.TitleLimit == 0 {
@@ -328,6 +328,7 @@ func (m Model) handleConfig(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				m.inputBuf = strconv.Itoa(m.cfg.TitleLimit)
 			}
+			m.inputCursor = utf8.RuneCountInString(m.inputBuf)
 			m.mode = viewConfigEdit
 		case "statuses":
 			m.statusRowIdx = 0
@@ -344,6 +345,7 @@ func (m Model) handleStatuses(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "esc":
 			m.mode = viewStatuses
 			m.inputBuf = ""
+			m.inputCursor = 0
 		case "enter":
 			val := strings.TrimSpace(m.inputBuf)
 			if m.statusEditStep == 0 {
@@ -353,9 +355,11 @@ func (m Model) handleStatuses(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if m.statusEditNew {
 					m.statusTmpName = val
 					m.inputBuf = ""
+					m.inputCursor = 0
 				} else {
 					m.updateStatusName(m.statusRowIdx, val)
 					m.inputBuf = m.statuses[m.statusRowIdx].Color
+					m.inputCursor = utf8.RuneCountInString(m.inputBuf)
 				}
 				m.statusEditStep = 1
 			} else {
@@ -368,16 +372,10 @@ func (m Model) handleStatuses(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				_ = m.store.WriteConfig(m.cfg)
 				m.mode = viewStatuses
 				m.inputBuf = ""
-			}
-		case "backspace":
-			r := []rune(m.inputBuf)
-			if len(r) > 0 {
-				m.inputBuf = string(r[:len(r)-1])
+				m.inputCursor = 0
 			}
 		default:
-			if len(msg.Runes) > 0 {
-				m.inputBuf += string(msg.Runes)
-			}
+			m.handleInputKey(msg.String(), msg.Runes)
 		}
 		return m, nil
 	}
@@ -411,12 +409,14 @@ func (m Model) handleStatuses(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.statusEditNew = true
 		m.statusEditStep = 0
 		m.inputBuf = ""
+		m.inputCursor = 0
 		m.mode = viewStatusEdit
 	case "e":
 		if len(m.statuses) > 0 {
 			m.statusEditNew = false
 			m.statusEditStep = 0
 			m.inputBuf = m.statuses[m.statusRowIdx].Name
+			m.inputCursor = utf8.RuneCountInString(m.inputBuf)
 			m.mode = viewStatusEdit
 		}
 	case "d":
@@ -430,11 +430,127 @@ func (m Model) handleStatuses(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// --- text input helpers ---
+
+// inputInsert inserts s at the current cursor position and advances the cursor.
+func (m *Model) inputInsert(s string) {
+	r := []rune(m.inputBuf)
+	ins := []rune(s)
+	newR := make([]rune, 0, len(r)+len(ins))
+	newR = append(newR, r[:m.inputCursor]...)
+	newR = append(newR, ins...)
+	newR = append(newR, r[m.inputCursor:]...)
+	m.inputBuf = string(newR)
+	m.inputCursor += len(ins)
+}
+
+// inputBackspace deletes the rune immediately before the cursor.
+func (m *Model) inputBackspace() {
+	if m.inputCursor == 0 {
+		return
+	}
+	r := []rune(m.inputBuf)
+	newR := make([]rune, 0, len(r)-1)
+	newR = append(newR, r[:m.inputCursor-1]...)
+	newR = append(newR, r[m.inputCursor:]...)
+	m.inputBuf = string(newR)
+	m.inputCursor--
+}
+
+// inputWordLeft moves the cursor to the start of the previous word.
+func (m *Model) inputWordLeft() {
+	r := []rune(m.inputBuf)
+	pos := m.inputCursor
+	for pos > 0 && r[pos-1] == ' ' {
+		pos--
+	}
+	for pos > 0 && r[pos-1] != ' ' {
+		pos--
+	}
+	m.inputCursor = pos
+}
+
+// inputWordRight moves the cursor past the end of the next word.
+func (m *Model) inputWordRight() {
+	r := []rune(m.inputBuf)
+	pos := m.inputCursor
+	for pos < len(r) && r[pos] == ' ' {
+		pos++
+	}
+	for pos < len(r) && r[pos] != ' ' {
+		pos++
+	}
+	m.inputCursor = pos
+}
+
+// inputDeleteWordLeft deletes from the cursor back to the start of the previous word.
+func (m *Model) inputDeleteWordLeft() {
+	if m.inputCursor == 0 {
+		return
+	}
+	r := []rune(m.inputBuf)
+	pos := m.inputCursor
+	for pos > 0 && r[pos-1] == ' ' {
+		pos--
+	}
+	for pos > 0 && r[pos-1] != ' ' {
+		pos--
+	}
+	newR := make([]rune, 0, len(r)-(m.inputCursor-pos))
+	newR = append(newR, r[:pos]...)
+	newR = append(newR, r[m.inputCursor:]...)
+	m.inputBuf = string(newR)
+	m.inputCursor = pos
+}
+
+// handleInputKey handles navigation and editing keys common to all text inputs.
+// Returns true if the key was consumed.
+func (m *Model) handleInputKey(key string, runes []rune) bool {
+	runeLen := utf8.RuneCountInString(m.inputBuf)
+	switch key {
+	case "left", "ctrl+b":
+		if m.inputCursor > 0 {
+			m.inputCursor--
+		}
+	case "right", "ctrl+f":
+		if m.inputCursor < runeLen {
+			m.inputCursor++
+		}
+	case "alt+left", "alt+b":
+		m.inputWordLeft()
+	case "alt+right", "alt+f":
+		m.inputWordRight()
+	case "ctrl+a":
+		m.inputCursor = 0
+	case "ctrl+e":
+		m.inputCursor = runeLen
+	case "ctrl+w":
+		m.inputDeleteWordLeft()
+	case "ctrl+k":
+		r := []rune(m.inputBuf)
+		m.inputBuf = string(r[:m.inputCursor])
+	case "ctrl+u":
+		r := []rune(m.inputBuf)
+		m.inputBuf = string(r[m.inputCursor:])
+		m.inputCursor = 0
+	case "backspace":
+		m.inputBackspace()
+	default:
+		if len(runes) > 0 {
+			m.inputInsert(string(runes))
+			return true
+		}
+		return false
+	}
+	return true
+}
+
 func (m Model) handleInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.mode = viewBoard
 		m.inputBuf = ""
+		m.inputCursor = 0
 	case "enter":
 		title := strings.TrimSpace(m.inputBuf)
 		if title != "" {
@@ -449,15 +565,9 @@ func (m Model) handleInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.mode = viewBoard
 		m.inputBuf = ""
-	case "backspace":
-		r := []rune(m.inputBuf)
-		if len(r) > 0 {
-			m.inputBuf = string(r[:len(r)-1])
-		}
+		m.inputCursor = 0
 	default:
-		if len(msg.Runes) > 0 {
-			m.inputBuf += string(msg.Runes)
-		}
+		m.handleInputKey(msg.String(), msg.Runes)
 	}
 	return m, nil
 }
@@ -1004,8 +1114,22 @@ func (m Model) viewMoveMenu() string {
 	return sb.String()
 }
 
+// cursorInput renders inputBuf with a block cursor at inputCursor.
+// The character under the cursor is shown in reverse video (cursor on top of
+// char), matching standard terminal behaviour. At the end of the string a
+// highlighted space is shown.
+func (m Model) cursorInput() string {
+	r := []rune(m.inputBuf)
+	before := string(r[:m.inputCursor])
+	curStyle := lipgloss.NewStyle().Reverse(true)
+	if m.inputCursor < len(r) {
+		return before + curStyle.Render(string(r[m.inputCursor])) + string(r[m.inputCursor+1:])
+	}
+	return before + curStyle.Render(" ")
+}
+
 func (m Model) viewInputBar(label string) string {
-	return label + m.inputBuf + "█"
+	return label + m.cursorInput()
 }
 
 func (m Model) viewStatusesScreen() string {
@@ -1028,7 +1152,7 @@ func (m Model) viewStatusesScreen() string {
 			}
 			label = fmt.Sprintf("Color for %q (ANSI name or code): ", name)
 		}
-		fmt.Fprintln(&sb, label+m.inputBuf+"█")
+		fmt.Fprintln(&sb, label+m.cursorInput())
 		fmt.Fprintln(&sb, "\n[Enter] confirm  [Esc] cancel")
 		return sb.String()
 	}
@@ -1079,7 +1203,7 @@ func (m Model) viewConfigScreen() string {
 		}
 
 		if m.mode == viewConfigEdit && i == m.cfgRowIdx {
-			val = m.inputBuf + "█"
+			val = m.cursorInput()
 		}
 
 		line := fmt.Sprintf("  %-30s %s", f.label, val)

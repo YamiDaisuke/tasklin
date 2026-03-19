@@ -150,6 +150,12 @@ tickets:
         - from: In Progress
           to: Backlog
           at: 2026-03-11T01:58:33.350561Z
+        - from: Backlog
+          to: In Progress
+          at: 2026-03-19T13:13:12.453095Z
+        - from: In Progress
+          to: Backlog
+          at: 2026-03-19T13:13:16.604819Z
     - id: 14
       title: Add sample data
       status: Done
@@ -169,8 +175,21 @@ tickets:
           at: 2026-03-10T02:56:40.020903Z
     - id: 15
       title: Add keyboard navigation while editing ticket titles
-      status: Backlog
+      status: Done
       created_at: 2026-03-10T01:43:27.071029Z
+      transitions:
+        - from: Backlog
+          to: In Progress
+          at: 2026-03-19T13:13:18.017954Z
+        - from: In Progress
+          to: Done
+          at: 2026-03-19T13:25:49.821243Z
+        - from: Done
+          to: In Progress
+          at: 2026-03-19T13:26:21.810673Z
+        - from: In Progress
+          to: Done
+          at: 2026-03-19T13:26:22.522666Z
     - id: 16
       title: Add ticket types
       status: Backlog
