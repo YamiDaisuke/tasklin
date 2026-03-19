@@ -31,6 +31,7 @@ type Config struct {
 	TitleLimit        int      `yaml:"title_limit"`
 	DefaultDoneStatus string   `yaml:"default_done_status"`
 	AutoCommitOnDone  bool     `yaml:"auto_commit_on_done"`
+	MinColWidth       int      `yaml:"min_col_width"`
 	Statuses          []Status `yaml:"statuses"`
 }
 
@@ -65,6 +66,7 @@ func DefaultConfig() Config {
 	return Config{
 		TitleLimit:        0,
 		DefaultDoneStatus: "Done",
+		MinColWidth:       16,
 		Statuses:          DefaultStatuses(),
 	}
 }

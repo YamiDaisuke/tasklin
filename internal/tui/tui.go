@@ -43,6 +43,7 @@ var configFields = []cfgFieldDef{
 	{"Auto-commit on Done", "bool"},
 	{"Default Done status", "string"},
 	{"Title limit (0 = unlimited)", "int"},
+	{"Min column width (0 = auto)", "int"},
 	{"Manage statuses", "statuses"},
 }
 
@@ -53,6 +54,7 @@ type Model struct {
 	tickets        []model.Ticket // runtime (branch overrides applied)
 	statuses       []model.Status // sorted
 	colIdx         int            // focused column
+	colOffset      int            // first visible column (horizontal scroll)
 	rowIdx         int            // focused row within column
 	boardRowIdx    int            // rowIdx saved before entering move mode
 	colScroll      []int          // per-column scroll offsets
@@ -185,12 +187,14 @@ func (m Model) handleBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.colIdx--
 			m.rowIdx = 0
 			m.clampScroll()
+			m.clampColOffset()
 		}
 	case "right", "l":
 		if m.colIdx < len(cols)-1 {
 			m.colIdx++
 			m.rowIdx = 0
 			m.clampScroll()
+			m.clampColOffset()
 		}
 	case "up", "k":
 		if m.rowIdx > 0 {
@@ -240,6 +244,7 @@ func (m Model) handleBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.colIdx--
 			m.rowIdx = 0
 			m.clampScroll()
+			m.clampColOffset()
 			return m, m.scheduleCommit(ticket, targetStatus)
 		}
 	case "shift+right":
@@ -252,6 +257,7 @@ func (m Model) handleBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.colIdx++
 			m.rowIdx = 0
 			m.clampScroll()
+			m.clampColOffset()
 			return m, m.scheduleCommit(ticket, targetStatus)
 		}
 	case "d":
@@ -285,6 +291,13 @@ func (m Model) handleConfig(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.cfg.TitleLimit = 0
 				} else if n, err := strconv.Atoi(val); err == nil && n >= 0 {
 					m.cfg.TitleLimit = n
+				}
+			case 3: // MinColWidth
+				if val == "" {
+					m.cfg.MinColWidth = 0
+				} else if n, err := strconv.Atoi(val); err == nil && n >= 0 {
+					m.cfg.MinColWidth = n
+					m.clampColOffset()
 				}
 			}
 			_ = m.store.WriteConfig(m.cfg)
@@ -323,10 +336,17 @@ func (m Model) handleConfig(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.inputCursor = utf8.RuneCountInString(m.inputBuf)
 			m.mode = viewConfigEdit
 		case "int":
-			if m.cfg.TitleLimit == 0 {
+			var intVal int
+			switch m.cfgRowIdx {
+			case 2:
+				intVal = m.cfg.TitleLimit
+			case 3:
+				intVal = m.cfg.MinColWidth
+			}
+			if intVal == 0 {
 				m.inputBuf = ""
 			} else {
-				m.inputBuf = strconv.Itoa(m.cfg.TitleLimit)
+				m.inputBuf = strconv.Itoa(intVal)
 			}
 			m.inputCursor = utf8.RuneCountInString(m.inputBuf)
 			m.mode = viewConfigEdit
@@ -847,6 +867,40 @@ func (m Model) ticketRows() int {
 	return rows
 }
 
+// clampColOffset adjusts colOffset so that colIdx stays within the visible
+// column window. Call after any change to colIdx or MinColWidth.
+func (m *Model) clampColOffset() {
+	n := len(m.statuses)
+	if n == 0 {
+		m.colOffset = 0
+		return
+	}
+	minCW := m.cfg.MinColWidth
+	if minCW <= 0 {
+		m.colOffset = 0
+		return
+	}
+	visibleCols := (m.width + 1) / (minCW + 1)
+	if visibleCols < 1 {
+		visibleCols = 1
+	}
+	if visibleCols >= n {
+		m.colOffset = 0
+		return
+	}
+	if m.colIdx < m.colOffset {
+		m.colOffset = m.colIdx
+	} else if m.colIdx >= m.colOffset+visibleCols {
+		m.colOffset = m.colIdx - visibleCols + 1
+	}
+	if maxOff := n - visibleCols; m.colOffset > maxOff {
+		m.colOffset = maxOff
+	}
+	if m.colOffset < 0 {
+		m.colOffset = 0
+	}
+}
+
 // clampScroll adjusts colScroll[colIdx] so that rowIdx stays visible.
 func (m *Model) clampScroll() {
 	if m.colIdx >= len(m.colScroll) {
@@ -914,14 +968,36 @@ func (m Model) viewBoard() string {
 		return "No statuses configured."
 	}
 
-	// Divide terminal width evenly; last column absorbs any remainder so the
-	// total always equals m.width exactly (1 '│' separator between each col).
-	sepTotal := n - 1
-	baseColWidth := (m.width - sepTotal) / n
+	// Determine which columns are visible (horizontal scroll).
+	minCW := m.cfg.MinColWidth
+	visibleCols := n
+	colOffset := m.colOffset
+	if minCW > 0 {
+		visibleCols = (m.width + 1) / (minCW + 1)
+		if visibleCols < 1 {
+			visibleCols = 1
+		}
+		if visibleCols > n {
+			visibleCols = n
+		}
+	}
+	// Safety: ensure colOffset doesn't go out of range (e.g. after resize).
+	if colOffset > n-visibleCols {
+		colOffset = n - visibleCols
+	}
+	if colOffset < 0 {
+		colOffset = 0
+	}
+	visibleStatuses := m.statuses[colOffset : colOffset+visibleCols]
+
+	// Divide terminal width evenly among visible columns; last absorbs remainder.
+	nv := visibleCols
+	sepTotal := nv - 1
+	baseColWidth := (m.width - sepTotal) / nv
 	if baseColWidth < 4 {
 		baseColWidth = 4
 	}
-	remainder := m.width - sepTotal - baseColWidth*n
+	remainder := m.width - sepTotal - baseColWidth*nv
 
 	// Ticket rows fill everything between the header/col-name/divider and footer.
 	// Layout rows: 3 app-header + 1 col-name + 1 divider + ticketRows + 1 footer
@@ -929,17 +1005,17 @@ func (m Model) viewBoard() string {
 	colHeight := 2 + ticketRows // col-name line + divider line + ticket lines
 
 	// Build each column as a slice of pre-rendered lines.
-	colLines := make([][]string, n)
-	for ci, st := range m.statuses {
+	colLines := make([][]string, nv)
+	for ci, st := range visibleStatuses {
 		colWidth := baseColWidth
-		if ci == n-1 {
+		if ci == nv-1 {
 			colWidth += remainder
 		}
 
 		tickets := m.ticketsInCol(st.Name)
 
 		statusColor := ansiColor(st.Color)
-		focused := ci == m.colIdx && m.mode == viewBoard
+		focused := (ci+colOffset) == m.colIdx && m.mode == viewBoard
 
 		headerStyle := lipgloss.NewStyle().
 			Bold(true).
@@ -957,8 +1033,9 @@ func (m Model) viewBoard() string {
 
 		// Determine scroll offset for this column.
 		scrollOffset := 0
-		if ci < len(m.colScroll) {
-			scrollOffset = m.colScroll[ci]
+		globalCI := ci + colOffset
+		if globalCI < len(m.colScroll) {
+			scrollOffset = m.colScroll[globalCI]
 		}
 
 		// Scrollbar geometry — only shown when tickets overflow the viewport.
@@ -1117,6 +1194,17 @@ func (m Model) viewBoard() string {
 		for i, h := range hints {
 			parts[i] = keyStyle.Render(h.key) + " " + h.label
 		}
+		// Horizontal scroll indicator when not all columns fit.
+		if visibleCols < n {
+			left, right := "", ""
+			if colOffset > 0 {
+				left = accentStyle.Render(fmt.Sprintf("◀%d ", colOffset))
+			}
+			if colOffset+visibleCols < n {
+				right = accentStyle.Render(fmt.Sprintf(" %d▶", n-colOffset-visibleCols))
+			}
+			parts = append(parts, left+"cols"+right)
+		}
 		footerContent = " " + strings.Join(parts, sepStr)
 	}
 	footerLine := lipgloss.NewStyle().
@@ -1249,6 +1337,12 @@ func (m Model) viewConfigScreen() string {
 				val = strconv.Itoa(m.cfg.TitleLimit)
 			}
 		case 3:
+			if m.cfg.MinColWidth == 0 {
+				val = "auto"
+			} else {
+				val = strconv.Itoa(m.cfg.MinColWidth)
+			}
+		case 4:
 			val = fmt.Sprintf("%d configured →", len(m.statuses))
 		}
 

@@ -202,7 +202,7 @@ tickets:
       created_at: 2026-03-10T01:59:59.997154Z
     - id: 17
       title: Add max/min col size and horizontal scroll if needed
-      status: Backlog
+      status: Done
       created_at: 2026-03-10T02:57:43.18986Z
       transitions:
         - from: Backlog
@@ -211,6 +211,12 @@ tickets:
         - from: In Progress
           to: Backlog
           at: 2026-03-19T13:32:58.295255Z
+        - from: Backlog
+          to: In Progress
+          at: 2026-03-19T13:33:12.231464Z
+        - from: In Progress
+          to: Done
+          at: 2026-03-19T13:46:44.512629Z
     - id: 18
       title: Add CLAUDE.md
       status: Done
