@@ -962,16 +962,49 @@ func (m Model) viewBoard() string {
 		}
 
 		// Scrollbar geometry — only shown when tickets overflow the viewport.
-		needsBar := len(tickets) > ticketRows
+		// We need contentWidth first to compute wrapped line counts, so derive it
+		// from a provisional needsBar check and recompute if necessary.
+		textW := colWidth - 2 - 1 // pessimistic: assume scrollbar present (−1)
+		if textW < 1 {
+			textW = 1
+		}
+
+		// Compute total display rows (after wrapping) for all tickets.
+		totalDisplayRows := 0
+		scrollDisplayOffset := 0
+		for ti, t := range tickets {
+			label := fmt.Sprintf("[%d] %s", t.ID, t.Title)
+			n := len(wrapText(label, textW))
+			if ti < scrollOffset {
+				scrollDisplayOffset += n
+			}
+			totalDisplayRows += n
+		}
+		needsBar := totalDisplayRows > ticketRows
+		if !needsBar {
+			textW = colWidth - 2 // no scrollbar: reclaim the extra column
+			// Recompute with corrected width (scrollOffset usually 0 here).
+			totalDisplayRows = 0
+			scrollDisplayOffset = 0
+			for ti, t := range tickets {
+				label := fmt.Sprintf("[%d] %s", t.ID, t.Title)
+				n := len(wrapText(label, textW))
+				if ti < scrollOffset {
+					scrollDisplayOffset += n
+				}
+				totalDisplayRows += n
+			}
+		}
+
 		var thumbTop, thumbSize int
 		if needsBar {
-			thumbSize = ticketRows * ticketRows / len(tickets)
+			thumbSize = ticketRows * ticketRows / totalDisplayRows
 			if thumbSize < 1 {
 				thumbSize = 1
 			}
-			maxScroll := len(tickets) - ticketRows
-			if maxScroll > 0 {
-				thumbTop = scrollOffset * (ticketRows - thumbSize) / maxScroll
+			maxScrollRows := totalDisplayRows - ticketRows
+			if maxScrollRows > 0 {
+				thumbTop = scrollDisplayOffset * (ticketRows - thumbSize) / maxScrollRows
 			}
 			if thumbTop+thumbSize > ticketRows {
 				thumbTop = ticketRows - thumbSize
@@ -987,25 +1020,42 @@ func (m Model) viewBoard() string {
 			return lipgloss.NewStyle().Foreground(lipgloss.Color("236")).Render("╎")
 		}
 
-		// Content width shrinks by 1 when a scrollbar is present.
+		// Content width: text area including the 2-char left indent.
 		contentWidth := colWidth
 		if needsBar {
 			contentWidth = colWidth - 1
 		}
 
+		// Build a flat list of display rows starting from scrollOffset.
+		type drow struct {
+			ti    int  // ticket index
+			text  string
+			first bool // first wrapped line of this ticket
+		}
+		drows := make([]drow, 0, ticketRows)
+		for ti := scrollOffset; ti < len(tickets) && len(drows) < ticketRows; ti++ {
+			t := tickets[ti]
+			label := fmt.Sprintf("[%d] %s", t.ID, t.Title)
+			for li, line := range wrapText(label, textW) {
+				if len(drows) >= ticketRows {
+					break
+				}
+				drows = append(drows, drow{ti: ti, text: line, first: li == 0})
+			}
+		}
+
 		for ri := 0; ri < ticketRows; ri++ {
-			ti := scrollOffset + ri // absolute ticket index
 			bar := barChar(ri)
-			if ti < len(tickets) {
-				t := tickets[ti]
-				title := truncate(fmt.Sprintf("[%d] %s", t.ID, t.Title), contentWidth-3)
-				if focused && ti == m.rowIdx {
+			if ri < len(drows) {
+				dr := drows[ri]
+				isSelected := focused && dr.ti == m.rowIdx
+				if isSelected {
 					indicator := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render("▌")
-					text := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")).Width(contentWidth - 1).Render(" " + title)
+					text := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")).Width(contentWidth - 1).Render(" " + dr.text)
 					lines = append(lines, indicator+text+bar)
 				} else {
 					style := lipgloss.NewStyle().Width(contentWidth).PaddingLeft(2).Foreground(lipgloss.Color("252"))
-					lines = append(lines, style.Render(title)+bar)
+					lines = append(lines, style.Render(dr.text)+bar)
 				}
 			} else if ri == 0 && len(tickets) == 0 && focused {
 				// Placeholder row for empty focused column.
@@ -1256,6 +1306,40 @@ func ansiColor(name string) lipgloss.Color {
 	default:
 		return lipgloss.Color(name)
 	}
+}
+
+// wrapText splits s into lines of at most width runes, breaking on word
+// boundaries where possible and hard-cutting only when a single word exceeds width.
+func wrapText(s string, width int) []string {
+	if width <= 0 {
+		return []string{s}
+	}
+	runes := []rune(s)
+	if len(runes) <= width {
+		return []string{s}
+	}
+	var lines []string
+	for len(runes) > 0 {
+		if len(runes) <= width {
+			lines = append(lines, string(runes))
+			break
+		}
+		cut := width
+		// Walk back to find a space to break on.
+		for cut > 0 && runes[cut-1] != ' ' {
+			cut--
+		}
+		if cut == 0 {
+			cut = width // no space in range — hard cut
+		}
+		lines = append(lines, strings.TrimRight(string(runes[:cut]), " "))
+		runes = runes[cut:]
+		// Skip leading spaces on the continuation line.
+		for len(runes) > 0 && runes[0] == ' ' {
+			runes = runes[1:]
+		}
+	}
+	return lines
 }
 
 func truncate(s string, max int) string {

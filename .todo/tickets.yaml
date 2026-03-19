@@ -129,7 +129,7 @@ tickets:
           at: 2026-03-10T02:40:17.553019Z
     - id: 13
       title: Add line wrap on ticket titles
-      status: Backlog
+      status: Done
       created_at: 2026-03-10T01:42:30.953759Z
       transitions:
         - from: Backlog
@@ -156,6 +156,12 @@ tickets:
         - from: In Progress
           to: Backlog
           at: 2026-03-19T13:13:16.604819Z
+        - from: Backlog
+          to: In Progress
+          at: 2026-03-19T13:26:53.834509Z
+        - from: In Progress
+          to: Done
+          at: 2026-03-19T13:32:59.829338Z
     - id: 14
       title: Add sample data
       status: Done
@@ -198,6 +204,13 @@ tickets:
       title: Add max/min col size and horizontal scroll if needed
       status: Backlog
       created_at: 2026-03-10T02:57:43.18986Z
+      transitions:
+        - from: Backlog
+          to: In Progress
+          at: 2026-03-19T13:32:55.418707Z
+        - from: In Progress
+          to: Backlog
+          at: 2026-03-19T13:32:58.295255Z
     - id: 18
       title: Add CLAUDE.md
       status: Done
