@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write   # needed to create releases and upload assets
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so `git describe` resolves the tag
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Run tests
+        run: make test-ci
+
+      - name: Build all binaries
+        run: make build-all
+
+      - name: Generate checksums
+        run: |
+          cd bin
+          sha256sum tasklin-* > checksums.txt
+          echo "--- checksums ---"
+          cat checksums.txt
+
+      - name: Create GitHub release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            bin/tasklin-linux-amd64
+            bin/tasklin-linux-arm64
+            bin/tasklin-darwin-amd64
+            bin/tasklin-darwin-arm64
+            bin/tasklin-windows-amd64.exe
+            bin/checksums.txt
+          generate_release_notes: true
