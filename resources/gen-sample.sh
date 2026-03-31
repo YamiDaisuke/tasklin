@@ -262,6 +262,15 @@ NOUNS=(
   "schema validation" "input sanitisation" "output encoding" "CSRF protection"
 )
 
+# Label pool — valid identifiers, used for autocomplete and ticket assignment
+LABELS=(
+  "api" "backend" "bug" "chore" "core"
+  "database" "docs" "enhancement" "feature" "frontend"
+  "infra" "milestone" "mobile" "performance" "security"
+  "testing" "ux" "urgent" "v1" "v2"
+)
+LABEL_COUNT=${#LABELS[@]}
+
 # Build a weighted status array
 STATUS_POOL=()
 for i in "${!STATUSES[@]}"; do
@@ -289,6 +298,30 @@ POOL_SIZE=${#STATUS_POOL[@]}
     echo "  - id: ${id}"
     echo "    title: \"${title}\""
     echo "    status: \"${status}\""
+
+    # Assign 0–2 labels deterministically (≈30% none, 40% one, 30% two)
+    lc=$(( (id * 17 + 3) % 10 ))
+    if   (( lc <= 2 )); then lc=0
+    elif (( lc <= 6 )); then lc=1
+    else                     lc=2
+    fi
+    if (( lc >= 1 )); then
+      li1=$(( (id * 11 + 7) % LABEL_COUNT ))
+      lbl1="${LABELS[$li1]}"
+    fi
+    if (( lc == 2 )); then
+      li2=$(( (li1 + 1 + id % (LABEL_COUNT - 1)) % LABEL_COUNT ))
+      lbl2="${LABELS[$li2]}"
+    fi
+    if (( lc == 1 )); then
+      echo "    labels:"
+      echo "      - ${lbl1}"
+    elif (( lc == 2 )); then
+      echo "    labels:"
+      echo "      - ${lbl1}"
+      echo "      - ${lbl2}"
+    fi
+
     echo "    created_at: ${created}"
 
     # Add a transition for anything not in To Do
@@ -301,9 +334,18 @@ POOL_SIZE=${#STATUS_POOL[@]}
   done
 } > .todo/tickets.yaml
 
+# Write the autocomplete index — all labels from the pool, sorted
+echo "→ Writing .todo/labels.yaml..."
+{
+  echo "labels:"
+  for lbl in "${LABELS[@]}"; do
+    echo "  - ${lbl}"
+  done
+} > .todo/labels.yaml
+
 echo "→ Committing .todo data to the feature branch..."
 git add .todo/
-git commit -q -m "chore: add sample tasklin data (1000 tickets)"
+git commit -q -m "chore: add sample tasklin data (1000 tickets, labels)"
 
 # ---------------------------------------------------------------------------
 # Done

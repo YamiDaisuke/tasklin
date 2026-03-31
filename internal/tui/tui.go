@@ -1107,16 +1107,54 @@ func (m *Model) clampColOffset() {
 }
 
 // clampScroll adjusts colScroll[colIdx] so that rowIdx stays visible.
+// scroll and rowIdx are ticket indices; visibility is measured in display rows
+// (title lines + chip rows + separators), so we count actual display rows
+// rather than assuming 1 ticket == 1 display row.
 func (m *Model) clampScroll() {
-	if m.colIdx >= len(m.colScroll) {
+	if m.colIdx >= len(m.colScroll) || m.colIdx >= len(m.statuses) {
 		return
 	}
 	vis := m.ticketRows()
 	scroll := m.colScroll[m.colIdx]
+
+	// Scroll up: always safe to do by ticket index.
 	if m.rowIdx < scroll {
-		scroll = m.rowIdx
-	} else if m.rowIdx >= scroll+vis {
-		scroll = m.rowIdx - vis + 1
+		m.colScroll[m.colIdx] = m.rowIdx
+		return
+	}
+
+	// Approximate column text width for height estimation.
+	n := len(m.statuses)
+	if n == 0 {
+		n = 1
+	}
+	approxTextW := m.width/n - 4
+	if approxTextW < 4 {
+		approxTextW = 4
+	}
+
+	// Count display rows from scroll up to and including rowIdx.
+	tickets := m.ticketsInCol(m.statuses[m.colIdx].Name)
+	used := 0
+	for ti := scroll; ti <= m.rowIdx && ti < len(tickets); ti++ {
+		t := tickets[ti]
+		label := fmt.Sprintf("[%d] %s", t.ID, t.Title)
+		used += len(wrapText(label, approxTextW)) + len(chipRows(t.Labels, approxTextW))
+		if ti < len(tickets)-1 {
+			used++ // separator
+		}
+	}
+
+	// Scroll down until rowIdx fits within vis display rows.
+	for used > vis && scroll < m.rowIdx {
+		// Subtract the height of the ticket leaving the top.
+		t := tickets[scroll]
+		label := fmt.Sprintf("[%d] %s", t.ID, t.Title)
+		used -= len(wrapText(label, approxTextW)) + len(chipRows(t.Labels, approxTextW))
+		if scroll < len(tickets)-1 {
+			used-- // separator that was after this ticket
+		}
+		scroll++
 	}
 	m.colScroll[m.colIdx] = scroll
 }
