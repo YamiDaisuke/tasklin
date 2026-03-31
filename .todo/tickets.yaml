@@ -197,9 +197,19 @@ tickets:
           to: Done
           at: 2026-03-19T13:26:22.522666Z
     - id: 16
-      title: 'feat: Add ticket types'
-      status: Backlog
+      title: 'feat: Add ticket labels'
+      status: Done
+      labels:
+        - enhancement
+        - v1
       created_at: 2026-03-10T01:59:59.997154Z
+      transitions:
+        - from: Backlog
+          to: In Progress
+          at: 2026-03-31T01:47:20.08093Z
+        - from: In Progress
+          to: Done
+          at: 2026-03-31T02:31:51.889252Z
     - id: 17
       title: Add max/min col size and horizontal scroll if needed
       status: Done
@@ -258,3 +268,10 @@ tickets:
         - from: In Progress
           to: Done
           at: 2026-03-20T01:10:13.015175Z
+    - id: 22
+      title: Release v1
+      status: Backlog
+      labels:
+        - milestone
+        - v1
+      created_at: 2026-03-31T02:20:33.73156Z

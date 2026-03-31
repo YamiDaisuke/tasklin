@@ -22,6 +22,7 @@ type Ticket struct {
 	ID          int          `yaml:"id"`
 	Title       string       `yaml:"title"`
 	Status      string       `yaml:"status"`
+	Labels      []string     `yaml:"labels,omitempty"`
 	CreatedAt   time.Time    `yaml:"created_at"`
 	Transitions []Transition `yaml:"transitions,omitempty"`
 }

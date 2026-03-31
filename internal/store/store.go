@@ -15,7 +15,12 @@ const (
 	ConfigFile  = "config.yaml"
 	TicketsFile = "tickets.yaml"
 	DeletedFile = "deleted.yaml"
+	LabelsFile  = "labels.yaml"
 )
+
+type labelsIndex struct {
+	Labels []string `yaml:"labels"`
+}
 
 // Store manages reading and writing project data.
 type Store struct {
@@ -100,6 +105,24 @@ func (s *Store) ReadDeleted() ([]model.Ticket, error) {
 // WriteDeleted writes deleted.yaml.
 func (s *Store) WriteDeleted(tickets []model.Ticket) error {
 	return writeYAML(filepath.Join(s.TodoPath(), DeletedFile), model.TicketFile{Tickets: tickets})
+}
+
+// ReadLabels reads labels.yaml (the set of known labels for autocomplete).
+func (s *Store) ReadLabels() ([]string, error) {
+	p := filepath.Join(s.TodoPath(), LabelsFile)
+	if _, err := os.Stat(p); os.IsNotExist(err) {
+		return nil, nil
+	}
+	var idx labelsIndex
+	if err := readYAML(p, &idx); err != nil {
+		return nil, fmt.Errorf("read labels: %w", err)
+	}
+	return idx.Labels, nil
+}
+
+// WriteLabels writes labels.yaml.
+func (s *Store) WriteLabels(labels []string) error {
+	return writeYAML(filepath.Join(s.TodoPath(), LabelsFile), labelsIndex{Labels: labels})
 }
 
 // NextID returns the next unique ticket ID (max ever created + 1).

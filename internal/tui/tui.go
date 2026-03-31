@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -31,6 +32,8 @@ const (
 	viewConfigEdit          // editing a single config field
 	viewStatuses            // manage statuses list
 	viewStatusEdit          // editing name or color of a status
+	viewLabelEdit           // add/remove labels on selected ticket
+	viewFilter              // filter board by labels
 )
 
 // cfgFieldDef describes one editable config field.
@@ -64,14 +67,18 @@ type Model struct {
 	statusEditStep int            // 0=name, 1=color
 	statusEditNew  bool           // true when adding a new status
 	statusTmpName  string         // holds name between step 0 and 1 when adding
-	mode           viewMode
-	inputBuf       string
-	inputCursor    int // cursor position in runes within inputBuf
-	err            error
-	branch         string
-	projectDir     string
-	width          int
-	height         int
+	mode            viewMode
+	inputBuf        string
+	inputCursor     int // cursor position in runes within inputBuf
+	err             error
+	branch          string
+	projectDir      string
+	width           int
+	height          int
+	knownLabels     []string // all labels seen, persisted for autocomplete
+	filterLabels    []string // active label filters (AND semantics)
+	labelSuggestions []string // autocomplete candidates for current inputBuf
+	acIdx           int      // selected suggestion index (-1 = none)
 }
 
 // New creates a TUI model for the given store, applying branch overrides.
@@ -94,17 +101,34 @@ func New(s *store.Store, projectDir string) (Model, error) {
 		}
 	}
 
+	knownLabels, _ := s.ReadLabels()
+	if len(knownLabels) == 0 {
+		// Bootstrap from existing ticket labels.
+		seen := map[string]bool{}
+		for _, t := range tickets {
+			for _, l := range t.Labels {
+				seen[l] = true
+			}
+		}
+		for l := range seen {
+			knownLabels = append(knownLabels, l)
+		}
+		sort.Strings(knownLabels)
+	}
+
 	statuses := store.SortedStatuses(cfg.Statuses)
 	return Model{
-		store:      s,
-		cfg:        cfg,
-		tickets:    tickets,
-		statuses:   statuses,
-		colScroll:  make([]int, len(statuses)),
-		branch:     branch,
-		projectDir: projectDir,
-		width:      80,
-		height:     24,
+		store:       s,
+		cfg:         cfg,
+		tickets:     tickets,
+		statuses:    statuses,
+		colScroll:   make([]int, len(statuses)),
+		branch:      branch,
+		projectDir:  projectDir,
+		width:       80,
+		height:      24,
+		knownLabels: knownLabels,
+		acIdx:       -1,
 	}, nil
 }
 
@@ -172,6 +196,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleConfig(msg)
 	case viewStatuses, viewStatusEdit:
 		return m.handleStatuses(msg)
+	case viewLabelEdit:
+		return m.handleLabelEdit(msg)
+	case viewFilter:
+		return m.handleFilter(msg)
 	default:
 		return m.handleBoard(msg)
 	}
@@ -189,7 +217,7 @@ func (m Model) handleBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.clampScroll()
 			m.clampColOffset()
 		}
-	case "right", "l":
+	case "right":
 		if m.colIdx < len(cols)-1 {
 			m.colIdx++
 			m.rowIdx = 0
@@ -262,6 +290,21 @@ func (m Model) handleBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "d":
 		m.deleteSelected()
+	case "l":
+		col := m.ticketsInCol(cols[m.colIdx].Name)
+		if len(col) > 0 {
+			m.mode = viewLabelEdit
+			m.inputBuf = ""
+			m.inputCursor = 0
+			m.acIdx = -1
+			m.updateSuggestions()
+		}
+	case "/":
+		m.mode = viewFilter
+		m.inputBuf = ""
+		m.inputCursor = 0
+		m.acIdx = -1
+		m.updateSuggestions()
 	case "c":
 		m.mode = viewConfig
 		m.cfgRowIdx = 0
@@ -684,6 +727,125 @@ func (m Model) handleDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) handleLabelEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.mode = viewBoard
+		m.inputBuf = ""
+		m.inputCursor = 0
+		m.labelSuggestions = nil
+		m.acIdx = -1
+	case "enter":
+		label := strings.TrimSpace(m.inputBuf)
+		if label != "" && isValidLabel(label) {
+			t := m.selectedTicket()
+			if t != nil {
+				m.addLabelToTicket(t.ID, label)
+			}
+		}
+		m.inputBuf = ""
+		m.inputCursor = 0
+		m.acIdx = -1
+		m.updateSuggestions()
+	case "tab":
+		if len(m.labelSuggestions) > 0 {
+			m.acIdx = (m.acIdx + 1) % len(m.labelSuggestions)
+			m.inputBuf = m.labelSuggestions[m.acIdx]
+			m.inputCursor = utf8.RuneCountInString(m.inputBuf)
+		}
+	case "shift+tab":
+		if len(m.labelSuggestions) > 0 {
+			if m.acIdx <= 0 {
+				m.acIdx = len(m.labelSuggestions) - 1
+			} else {
+				m.acIdx--
+			}
+			m.inputBuf = m.labelSuggestions[m.acIdx]
+			m.inputCursor = utf8.RuneCountInString(m.inputBuf)
+		}
+	case "backspace":
+		if m.inputCursor == 0 {
+			t := m.selectedTicket()
+			if t != nil && len(t.Labels) > 0 {
+				m.removeLabelFromTicket(t.ID, t.Labels[len(t.Labels)-1])
+			}
+		} else {
+			m.handleInputKey(msg.String(), msg.Runes)
+			m.acIdx = -1
+			m.updateSuggestions()
+		}
+	default:
+		if m.handleInputKey(msg.String(), msg.Runes) {
+			m.acIdx = -1
+			m.updateSuggestions()
+		}
+	}
+	return m, nil
+}
+
+func (m Model) handleFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.mode = viewBoard
+		m.inputBuf = ""
+		m.inputCursor = 0
+		m.labelSuggestions = nil
+		m.acIdx = -1
+	case "enter":
+		label := strings.TrimSpace(m.inputBuf)
+		if label != "" {
+			already := false
+			for _, fl := range m.filterLabels {
+				if fl == label {
+					already = true
+					break
+				}
+			}
+			if !already {
+				m.filterLabels = append(m.filterLabels, label)
+			}
+		}
+		m.inputBuf = ""
+		m.inputCursor = 0
+		m.acIdx = -1
+		m.updateSuggestions()
+	case "tab":
+		if len(m.labelSuggestions) > 0 {
+			m.acIdx = (m.acIdx + 1) % len(m.labelSuggestions)
+			m.inputBuf = m.labelSuggestions[m.acIdx]
+			m.inputCursor = utf8.RuneCountInString(m.inputBuf)
+		}
+	case "shift+tab":
+		if len(m.labelSuggestions) > 0 {
+			if m.acIdx <= 0 {
+				m.acIdx = len(m.labelSuggestions) - 1
+			} else {
+				m.acIdx--
+			}
+			m.inputBuf = m.labelSuggestions[m.acIdx]
+			m.inputCursor = utf8.RuneCountInString(m.inputBuf)
+		}
+	case "ctrl+u":
+		m.filterLabels = nil
+	case "backspace":
+		if m.inputCursor == 0 {
+			if len(m.filterLabels) > 0 {
+				m.filterLabels = m.filterLabels[:len(m.filterLabels)-1]
+			}
+		} else {
+			m.handleInputKey(msg.String(), msg.Runes)
+			m.acIdx = -1
+			m.updateSuggestions()
+		}
+	default:
+		if m.handleInputKey(msg.String(), msg.Runes) {
+			m.acIdx = -1
+			m.updateSuggestions()
+		}
+	}
+	return m, nil
+}
+
 // --- data mutations ---
 
 func (m *Model) addTicket(title string) {
@@ -773,6 +935,49 @@ func (m *Model) deleteSelected() {
 func (m *Model) persist() {
 	// Only write tickets that don't have branch overrides pending.
 	_ = m.store.WriteTickets(m.tickets)
+}
+
+func (m *Model) addLabelToTicket(ticketID int, label string) {
+	for i, t := range m.tickets {
+		if t.ID == ticketID {
+			for _, l := range t.Labels {
+				if l == label {
+					return // already present
+				}
+			}
+			m.tickets[i].Labels = append(m.tickets[i].Labels, label)
+			break
+		}
+	}
+	m.updateKnownLabels(label)
+	m.persist()
+}
+
+func (m *Model) removeLabelFromTicket(ticketID int, label string) {
+	for i, t := range m.tickets {
+		if t.ID == ticketID {
+			out := make([]string, 0, len(t.Labels))
+			for _, l := range t.Labels {
+				if l != label {
+					out = append(out, l)
+				}
+			}
+			m.tickets[i].Labels = out
+			break
+		}
+	}
+	m.persist()
+}
+
+func (m *Model) updateKnownLabels(label string) {
+	for _, l := range m.knownLabels {
+		if l == label {
+			return
+		}
+	}
+	m.knownLabels = append(m.knownLabels, label)
+	sort.Strings(m.knownLabels)
+	_ = m.store.WriteLabels(m.knownLabels)
 }
 
 func (m *Model) addStatus(name, color string) {
@@ -919,12 +1124,32 @@ func (m *Model) clampScroll() {
 func (m Model) ticketsInCol(statusName string) []model.Ticket {
 	var result []model.Ticket
 	for _, t := range m.tickets {
-		if t.Status == statusName {
-			result = append(result, t)
+		if t.Status != statusName {
+			continue
 		}
+		if len(m.filterLabels) > 0 && !ticketMatchesFilter(t, m.filterLabels) {
+			continue
+		}
+		result = append(result, t)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result
+}
+
+func ticketMatchesFilter(t model.Ticket, filters []string) bool {
+	for _, f := range filters {
+		found := false
+		for _, l := range t.Labels {
+			if l == f {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 func (m Model) selectedTicket() *model.Ticket {
@@ -957,6 +1182,10 @@ func (m Model) View() string {
 		return m.viewConfigScreen()
 	case viewStatuses, viewStatusEdit:
 		return m.viewStatusesScreen()
+	case viewLabelEdit:
+		return m.centeredOverlay(m.viewLabelEditScreen())
+	case viewFilter:
+		return m.centeredOverlay(m.viewFilterScreen())
 	default:
 		return m.viewBoard()
 	}
@@ -1046,12 +1275,20 @@ func (m Model) viewBoard() string {
 			textW = 1
 		}
 
-		// Compute total display rows (after wrapping) for all tickets.
+		// ticketHeight returns the number of display rows a ticket occupies.
+		ticketHeight := func(t model.Ticket, tw int) int {
+			label := fmt.Sprintf("[%d] %s", t.ID, t.Title)
+			return len(wrapText(label, tw)) + len(chipRows(t.Labels, tw))
+		}
+
+		// Compute total display rows (after wrapping + chips + separators).
 		totalDisplayRows := 0
 		scrollDisplayOffset := 0
 		for ti, t := range tickets {
-			label := fmt.Sprintf("[%d] %s", t.ID, t.Title)
-			n := len(wrapText(label, textW))
+			n := ticketHeight(t, textW)
+			if ti < len(tickets)-1 {
+				n++ // separator between tickets
+			}
 			if ti < scrollOffset {
 				scrollDisplayOffset += n
 			}
@@ -1064,8 +1301,10 @@ func (m Model) viewBoard() string {
 			totalDisplayRows = 0
 			scrollDisplayOffset = 0
 			for ti, t := range tickets {
-				label := fmt.Sprintf("[%d] %s", t.ID, t.Title)
-				n := len(wrapText(label, textW))
+				n := ticketHeight(t, textW)
+				if ti < len(tickets)-1 {
+					n++ // separator between tickets
+				}
 				if ti < scrollOffset {
 					scrollDisplayOffset += n
 				}
@@ -1104,10 +1343,13 @@ func (m Model) viewBoard() string {
 		}
 
 		// Build a flat list of display rows starting from scrollOffset.
+		// Each drow is a title line, a chip row, or a separator.
 		type drow struct {
-			ti    int  // ticket index
-			text  string
-			first bool // first wrapped line of this ticket
+			ti   int    // ticket index
+			text string // title text, or \x00-joined labels for chip rows
+			first bool  // first title line of this ticket
+			chip bool   // label chip row
+			sep  bool   // separator between tickets
 		}
 		drows := make([]drow, 0, ticketRows)
 		for ti := scrollOffset; ti < len(tickets) && len(drows) < ticketRows; ti++ {
@@ -1119,6 +1361,15 @@ func (m Model) viewBoard() string {
 				}
 				drows = append(drows, drow{ti: ti, text: line, first: li == 0})
 			}
+			for _, row := range chipRows(t.Labels, textW) {
+				if len(drows) >= ticketRows {
+					break
+				}
+				drows = append(drows, drow{ti: ti, text: strings.Join(row, "\x00"), chip: true})
+			}
+			if ti < len(tickets)-1 && len(drows) < ticketRows {
+				drows = append(drows, drow{ti: ti, sep: true})
+			}
 		}
 
 		for ri := 0; ri < ticketRows; ri++ {
@@ -1126,13 +1377,31 @@ func (m Model) viewBoard() string {
 			if ri < len(drows) {
 				dr := drows[ri]
 				isSelected := focused && dr.ti == m.rowIdx
-				if isSelected {
-					indicator := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render("▌")
-					text := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")).Width(contentWidth - 1).Render(" " + dr.text)
-					lines = append(lines, indicator+text+bar)
-				} else {
-					style := lipgloss.NewStyle().Width(contentWidth).PaddingLeft(2).Foreground(lipgloss.Color("252"))
-					lines = append(lines, style.Render(dr.text)+bar)
+				switch {
+				case dr.sep:
+					lines = append(lines,
+						lipgloss.NewStyle().Foreground(lipgloss.Color("237")).
+							Render(strings.Repeat("╌", contentWidth))+bar)
+				case dr.chip:
+					lbls := strings.Split(dr.text, "\x00")
+					chipLine := renderChipRow(lbls, isSelected)
+					if isSelected {
+						indicator := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render("▌")
+						text := lipgloss.NewStyle().Width(contentWidth - 1).PaddingLeft(1).Render(chipLine)
+						lines = append(lines, indicator+text+bar)
+					} else {
+						lines = append(lines,
+							lipgloss.NewStyle().Width(contentWidth).PaddingLeft(2).Render(chipLine)+bar)
+					}
+				default:
+					if isSelected {
+						indicator := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render("▌")
+						text := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")).Width(contentWidth - 1).Render(" " + dr.text)
+						lines = append(lines, indicator+text+bar)
+					} else {
+						style := lipgloss.NewStyle().Width(contentWidth).PaddingLeft(2).Foreground(lipgloss.Color("252"))
+						lines = append(lines, style.Render(dr.text)+bar)
+					}
 				}
 			} else if ri == 0 && len(tickets) == 0 && focused {
 				// Placeholder row for empty focused column.
@@ -1189,10 +1458,18 @@ func (m Model) viewBoard() string {
 		keyStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
 		sepStr := dimStyle.Render("  │  ")
 		type hint struct{ key, label string }
-		hints := []hint{{"n", "new"}, {"d", "del"}, {"m", "move"}, {"e", "edit"}, {"c", "config"}, {"?", "help"}, {"q", "quit"}}
+		hints := []hint{{"n", "new"}, {"d", "del"}, {"m", "move"}, {"e", "edit"}, {"l", "labels"}, {"/", "filter"}, {"c", "config"}, {"?", "help"}, {"q", "quit"}}
 		parts := make([]string, len(hints))
 		for i, h := range hints {
 			parts[i] = keyStyle.Render(h.key) + " " + h.label
+		}
+		// Active filter indicator.
+		if len(m.filterLabels) > 0 {
+			chips := make([]string, len(m.filterLabels))
+			for i, fl := range m.filterLabels {
+				chips[i] = fl
+			}
+			parts = append(parts, accentStyle.Render("▼ ")+strings.Join(chips, " "))
 		}
 		// Horizontal scroll indicator when not all columns fit.
 		if visibleCols < n {
@@ -1365,10 +1642,21 @@ func (m Model) viewDetail() string {
 		return "  " + labelSt.Render(fmt.Sprintf("%-10s", lbl)) + " " + val
 	}
 
+	labelStr := dimSt.Render("(none)")
+	if len(t.Labels) > 0 {
+		chipSt := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+		chips := make([]string, len(t.Labels))
+		for i, l := range t.Labels {
+			chips[i] = chipSt.Render("[" + l + "]")
+		}
+		labelStr = strings.Join(chips, " ")
+	}
+
 	rows := []string{
 		"",
 		fieldRow("Title", t.Title),
 		fieldRow("Status", accentSt.Render(t.Status)),
+		fieldRow("Labels", labelStr),
 		fieldRow("Created", dimSt.Render(t.CreatedAt.Format("2006-01-02  15:04"))),
 		"",
 		"  " + sepSt.Render(strings.Repeat("─", innerW-4)),
@@ -1553,6 +1841,8 @@ func (m Model) viewHelpOverlay() string {
 		{"n", "new ticket"},
 		{"m", "move ticket to another status"},
 		{"e", "edit ticket title"},
+		{"l", "edit ticket labels"},
+		{"/", "filter by label"},
 		{"d", "delete ticket"},
 		{"c", "open config"},
 		{"?", "this help"},
@@ -1575,6 +1865,193 @@ func (m Model) viewHelpOverlay() string {
 		"",
 	)
 	return m.centeredOverlay(formPanel("Keyboard Shortcuts", rows, innerW))
+}
+
+func (m Model) viewLabelEditScreen() string {
+	t := m.selectedTicket()
+	if t == nil {
+		return formPanel("Edit Labels", []string{"", "  No ticket selected.", ""}, m.panelInnerW())
+	}
+	innerW := m.panelInnerW()
+	labelSt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("252"))
+	dimSt := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	chipSt := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	warnSt := lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+
+	rows := []string{""}
+	rows = append(rows, "  "+labelSt.Render("Ticket: ")+truncate(t.Title, innerW-10))
+	rows = append(rows, "")
+	rows = append(rows, "  "+labelSt.Render("Labels:"))
+	if len(t.Labels) == 0 {
+		rows = append(rows, "  "+dimSt.Render("(none)"))
+	} else {
+		for _, row := range chipRows(t.Labels, innerW-4) {
+			chips := make([]string, len(row))
+			for i, lbl := range row {
+				chips[i] = chipSt.Render("[" + lbl + "]")
+			}
+			rows = append(rows, "  "+strings.Join(chips, " "))
+		}
+	}
+	rows = append(rows, "")
+	rows = append(rows, "  "+labelSt.Render("Add label:"))
+	rows = append(rows, m.inputFieldRows(innerW)...)
+
+	input := strings.TrimSpace(m.inputBuf)
+	if input != "" && !isValidLabel(input) {
+		rows = append(rows, "  "+warnSt.Render("⚠  must start with a letter; alphanumeric and _ only"))
+	}
+
+	if len(m.labelSuggestions) > 0 {
+		rows = append(rows, "")
+		rows = append(rows, "  "+dimSt.Render("Suggestions  (Tab to cycle):"))
+		shown := m.labelSuggestions
+		if len(shown) > 5 {
+			shown = shown[:5]
+		}
+		for i, s := range shown {
+			if i == m.acIdx {
+				rows = append(rows, "    "+lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214")).Render("▶ "+s))
+			} else {
+				rows = append(rows, "    "+dimSt.Render("  "+s))
+			}
+		}
+	}
+
+	rows = append(rows, "")
+	rows = append(rows, panelHints([][2]string{
+		{"Enter", "add"}, {"Tab", "autocomplete"}, {"Backspace", "remove last"}, {"Esc", "close"},
+	}))
+	rows = append(rows, "")
+	return formPanel("Edit Labels", rows, innerW)
+}
+
+func (m Model) viewFilterScreen() string {
+	innerW := m.panelInnerW()
+	labelSt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("252"))
+	dimSt := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	chipSt := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+
+	rows := []string{""}
+	rows = append(rows, "  "+labelSt.Render("Active filters:"))
+	if len(m.filterLabels) == 0 {
+		rows = append(rows, "  "+dimSt.Render("(none — showing all tickets)"))
+	} else {
+		chips := make([]string, len(m.filterLabels))
+		for i, lbl := range m.filterLabels {
+			chips[i] = chipSt.Render("[" + lbl + "]")
+		}
+		rows = append(rows, "  "+strings.Join(chips, " "))
+	}
+	rows = append(rows, "")
+	rows = append(rows, "  "+labelSt.Render("Add filter:"))
+	rows = append(rows, m.inputFieldRows(innerW)...)
+
+	if len(m.labelSuggestions) > 0 {
+		rows = append(rows, "")
+		rows = append(rows, "  "+dimSt.Render("Suggestions  (Tab to cycle):"))
+		shown := m.labelSuggestions
+		if len(shown) > 5 {
+			shown = shown[:5]
+		}
+		for i, s := range shown {
+			if i == m.acIdx {
+				rows = append(rows, "    "+lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214")).Render("▶ "+s))
+			} else {
+				rows = append(rows, "    "+dimSt.Render("  "+s))
+			}
+		}
+	}
+
+	rows = append(rows, "")
+	rows = append(rows, panelHints([][2]string{
+		{"Enter", "add filter"}, {"Tab", "autocomplete"}, {"Backspace", "remove last"},
+	}))
+	rows = append(rows, panelHints([][2]string{
+		{"Ctrl+U", "clear all"}, {"Esc", "close"},
+	}))
+	rows = append(rows, "")
+	return formPanel("Filter by Label", rows, innerW)
+}
+
+// chipRows distributes labels into at most 2 display rows given the available
+// width. Returns slices of label strings — one slice per row.
+func chipRows(labels []string, width int) [][]string {
+	if len(labels) == 0 || width <= 0 {
+		return nil
+	}
+	var rows [][]string
+	var row []string
+	used := 0
+	for _, lbl := range labels {
+		w := utf8.RuneCountInString(lbl) + 2 // "[lbl]"
+		if len(row) > 0 {
+			w++ // space before chip
+		}
+		if len(row) > 0 && used+w > width {
+			rows = append(rows, row)
+			if len(rows) >= 2 {
+				return rows
+			}
+			row = []string{lbl}
+			used = utf8.RuneCountInString(lbl) + 2
+		} else {
+			row = append(row, lbl)
+			used += w
+		}
+	}
+	if len(row) > 0 && len(rows) < 2 {
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// renderChipRow renders a slice of label strings as styled inline chips.
+func renderChipRow(lbls []string, selected bool) string {
+	fg := lipgloss.Color("6")
+	if selected {
+		fg = lipgloss.Color("14")
+	}
+	st := lipgloss.NewStyle().Foreground(fg)
+	parts := make([]string, len(lbls))
+	for i, lbl := range lbls {
+		parts[i] = st.Render("[" + lbl + "]")
+	}
+	return strings.Join(parts, " ")
+}
+
+// isValidLabel returns true if s is a valid label identifier:
+// starts with a Unicode letter, followed by letters, digits, or underscores.
+func isValidLabel(s string) bool {
+	if s == "" {
+		return false
+	}
+	runes := []rune(s)
+	if !unicode.IsLetter(runes[0]) {
+		return false
+	}
+	for _, r := range runes[1:] {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+// updateSuggestions refreshes m.labelSuggestions based on current inputBuf prefix.
+func (m *Model) updateSuggestions() {
+	prefix := strings.ToLower(strings.TrimSpace(m.inputBuf))
+	if prefix == "" {
+		m.labelSuggestions = append([]string(nil), m.knownLabels...)
+		return
+	}
+	var out []string
+	for _, l := range m.knownLabels {
+		if strings.HasPrefix(strings.ToLower(l), prefix) {
+			out = append(out, l)
+		}
+	}
+	m.labelSuggestions = out
 }
 
 // --- style helpers ---
