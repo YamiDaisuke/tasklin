@@ -15,24 +15,32 @@ The main screen. Three or more columns, one per status, rendered side by side.
  ║ ╠═╣╚═╗╠╩╗║  ║║║║
  ╩ ╩ ╩╚═╝╩ ╩╩═╝╩╝╚╝  ⎇ main
 ────────────────────────────────────────────────────────────
- TO DO (4)            IN PROGRESS (2)        DONE (3)
+ TO DO (4)             IN PROGRESS (2)       DONE (3)
 ────────────────────────────────────────────────────────────
-▌ [1] Set up CI       [4] Write unit tests    [2] Init repo
-  [5] Add search      [7] Auth middleware     [3] Add models
-  [6] Dark mode                               [9] Migrations
-  [8] Export CSV
-  n new  │  d del  │  m move  │  e edit  │  c config  │  q quit
+▌ [1] Set up CI        [4] Write unit tests   [2] Init repo
+▌ [bug] [backend]      [backend] [security]   [chore]
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+  [5] Add search       [7] Auth middleware    [3] Add models
+  [feature]
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+  [6] Dark mode
+  [ux]
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+  n new  d del  m move  e edit  l labels  / filter  c config  ? help  q quit
 ```
 
 **Layout rules:**
 - Terminal width is divided evenly across columns; the last column absorbs any remainder
 - Column headers show the status name (uppercase) and ticket count
-- The focused ticket is marked with an amber `▌` indicator and bold white text
+- The focused ticket is marked with an amber `▌` indicator and bold white text; the indicator extends across all label chip rows of the same ticket
 - All other tickets render in dim gray
 - Tickets are sorted by ID (ascending) within each column
+- Labels are shown as `[chip]` rows below the title, up to 2 rows per ticket; chips are cyan, bright cyan when the ticket is selected
+- A dim `╌` separator line appears between each ticket for visual separation
 - A slim scrollbar appears on the right edge of any column that overflows:
   - `╎` = track (very dark)
   - `┃` = thumb (status color)
+- When a label filter is active, the footer shows `▼ label1 label2` after the key hints
 
 **Header:**
 - 3-line ASCII art "TASKLIN" in amber (`color 214`)
@@ -59,6 +67,7 @@ Shows the full history of the selected ticket.
 
   Title      Auth middleware
   Status     In Progress
+  Labels     [backend] [security]
   Created    2026-01-14 09:00
 
   History
@@ -71,6 +80,7 @@ Shows the full history of the selected ticket.
 ```
 
 **Notes:**
+- Labels are shown as cyan chips; `(none)` is displayed when the ticket has no labels
 - Transition history is append-only; every status change is recorded
 - Press `Esc` or `q` to return to the board
 
@@ -113,6 +123,77 @@ Same layout as new ticket, but pre-populated with the existing title.
 **Notes:**
 - `Backspace` deletes the last character
 - `Enter` confirms; `Esc` cancels without saving
+
+---
+
+## Edit labels (`l`)
+
+Opens a centred overlay for adding and removing labels on the focused ticket.
+
+```
+┌─ Edit Labels ──────────────────────────────────────────┐
+│                                                         │
+│  Ticket: Set up CI pipeline                             │
+│                                                         │
+│  Labels:                                                │
+│  [bug] [backend]                                        │
+│                                                         │
+│  Add label:                                             │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │ feat_                                             │  │
+│  └───────────────────────────────────────────────────┘  │
+│                                                         │
+│  Suggestions  (Tab to cycle):                           │
+│    ▶ feature                                            │
+│      frontend                                           │
+│                                                         │
+│  Enter add   Tab autocomplete   Backspace remove last   │
+│  Esc close                                              │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Notes:**
+- Label validation: must start with a letter; remaining characters may be letters, digits, or `_`. Invalid input shows a warning line; `Enter` is a no-op until the input is valid
+- `Tab` / `Shift+Tab` cycles through matching suggestions; the selected suggestion is filled into the input
+- `Backspace` when the input is empty removes the **last** label from the ticket
+- `Enter` with valid input adds the label (duplicate labels are silently ignored)
+- New labels are appended to `labels.yaml` immediately so they appear in future autocomplete sessions
+- Zero labels is valid — press `Esc` to close without adding any
+
+---
+
+## Filter by label (`/`)
+
+Opens a centred overlay for narrowing the board to tickets that carry specific labels.
+
+```
+┌─ Filter by Label ──────────────────────────────────────┐
+│                                                         │
+│  Active filters:                                        │
+│  [bug] [backend]                                        │
+│                                                         │
+│  Add filter:                                            │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │ _                                                 │  │
+│  └───────────────────────────────────────────────────┘  │
+│                                                         │
+│  Suggestions  (Tab to cycle):                           │
+│      api                                                │
+│      backend                                            │
+│      bug                                                │
+│                                                         │
+│  Enter add filter   Tab autocomplete   Backspace remove  │
+│  Ctrl+U clear all   Esc close                           │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Notes:**
+- Filters use **AND** semantics — a ticket must carry **all** active filter labels to be shown
+- The active filter set is displayed in the board footer as `▼ label1 label2`
+- Closing with `Esc` keeps the active filters; reopen with `/` to adjust them
+- `Backspace` when the input is empty removes the last active filter
+- `Ctrl+U` clears all active filters at once
+- Filtering affects ticket counts shown in column headers
 
 ---
 
@@ -251,6 +332,8 @@ Two-step editor: name first, then color.
     enter          view ticket detail
     n              new ticket
     e              edit ticket title
+    l              edit ticket labels
+    /              filter by label
     m              move ticket (pick any status)
     d              delete ticket
     c              config

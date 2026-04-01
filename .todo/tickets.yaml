@@ -288,5 +288,12 @@ tickets:
           at: 2026-03-31T02:38:11.046434Z
     - id: 24
       title: Update documentation
-      status: Backlog
+      status: Done
       created_at: 2026-03-31T02:37:30.42249Z
+      transitions:
+        - from: Backlog
+          to: In Progress
+          at: 2026-03-31T02:38:22.093745Z
+        - from: In Progress
+          to: Done
+          at: 2026-04-01T01:44:23.738985Z

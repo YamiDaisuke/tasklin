@@ -9,7 +9,8 @@ All tasklin data is plain YAML. There is no database — the files are designed 
 └── .todo/
     ├── config.yaml      ← project configuration and statuses
     ├── tickets.yaml     ← active tickets
-    └── deleted.yaml     ← soft-deleted tickets (never purged)
+    ├── deleted.yaml     ← soft-deleted tickets (never purged)
+    └── labels.yaml      ← known labels index (autocomplete source)
 
 ~/.config/tasklin/
 └── state.yaml           ← branch-level status overrides (global, user-scoped)
@@ -54,6 +55,7 @@ All tasklin data is plain YAML. There is no database — the files are designed 
               │ ID          int              │
               │ Title       string           │
               │ Status      string  ─────────┼──► Status.Name (soft ref)
+              │ Labels      []string         │
               │ CreatedAt   time.Time        │
               │ Transitions []Transition     │
               └──────────────┬───────────────┘
@@ -127,6 +129,9 @@ tickets:
   - id: 1
     title: "Set up CI pipeline"
     status: "In Progress"
+    labels:
+      - bug
+      - backend
     created_at: 2026-01-14T09:00:00Z
     transitions:
       - from: "To Do"
@@ -145,6 +150,8 @@ tickets:
 **Rules:**
 - `id` is globally unique and monotonically increasing
 - `id` is never reused, even after deletion (`NextID` reads `deleted.yaml` too)
+- `labels` is omitted when empty (YAML `omitempty`); zero labels is valid
+- Each label must match `[A-Za-z][A-Za-z0-9_]*` — validated at input time in the TUI
 - `transitions` is omitted when empty (YAML `omitempty`)
 - Transition history is append-only — never mutated after the fact
 
@@ -161,6 +168,26 @@ tickets:
     status: "To Do"
     created_at: 2026-01-12T10:00:00Z
 ```
+
+---
+
+## labels.yaml
+
+Stores the set of all labels that have ever been applied to any ticket in this project. Used exclusively to power autocomplete in the label editor and filter screens. Written automatically whenever a new label is first used.
+
+```yaml
+labels:
+  - backend
+  - bug
+  - feature
+  - frontend
+```
+
+**Rules:**
+- Labels are sorted alphabetically
+- The file is created on first label use; its absence is not an error
+- Removing a label from this file only affects autocomplete — existing ticket labels are unaffected
+- On startup, if `labels.yaml` is absent, tasklin bootstraps the list from labels already present on tickets
 
 ---
 

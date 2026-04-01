@@ -44,7 +44,7 @@ resources/
 The TUI uses the standard Bubble Tea `Model / Init / Update / View` pattern.
 
 **View modes** (iota):
-`viewBoard` → `viewDetail` → `viewMove` → `viewNew` → `viewEdit` → `viewHelp` → `viewConfig` → `viewConfigEdit` → `viewStatuses` → `viewStatusEdit`
+`viewBoard` → `viewDetail` → `viewMove` → `viewNew` → `viewEdit` → `viewHelp` → `viewConfig` → `viewConfigEdit` → `viewStatuses` → `viewStatusEdit` → `viewLabelEdit` → `viewFilter`
 
 Each mode has a dedicated `handle*` method and a `view*` method.
 
@@ -52,13 +52,23 @@ Each mode has a dedicated `handle*` method and a `view*` method.
 - `colIdx` / `rowIdx` — focused column and ticket within that column
 - `colScroll []int` — per-column scroll offsets (one entry per status)
 - `committing bool` — true while waiting to hand off to git (shows amber banner)
-- `inputBuf string` — shared text input buffer used across edit/new/config screens
+- `inputBuf string` — shared text input buffer used across edit/new/config/label screens
 - `cfgRowIdx` / `statusRowIdx` — focused row in config and status management screens
+- `knownLabels []string` — all labels seen across all tickets; persisted to `labels.yaml`
+- `filterLabels []string` — active label filters (AND semantics); survives mode changes
+- `labelSuggestions []string` — autocomplete candidates for the current `inputBuf` prefix
+- `acIdx int` — index of the selected autocomplete suggestion (-1 = none)
 
 **Scroll implementation:**
 - `ticketRows()` returns visible row count (`m.height - 6`)
 - `clampScroll()` adjusts `colScroll[colIdx]` after any `rowIdx` change
+- Each ticket occupies multiple display rows (title wrap lines + up to 2 label chip rows + 1 separator), so `clampScroll` counts actual display rows rather than assuming 1 ticket = 1 row
 - Scrollbars rendered as `╎` (track) / `┃` (thumb, status-coloured) on column right edge
+
+**Label chip rendering:**
+- `chipRows(labels, width)` distributes labels into at most 2 display rows given the column width
+- `renderChipRow(labels, selected)` renders a row of `[label]` chips in cyan (`color 6`) or bright-cyan (`color 14`) when the ticket is selected
+- The amber `▌` selection indicator spans all rows of the focused ticket (title lines and chip rows)
 
 **Auto-commit flow:**
 1. Ticket moved to Done → `scheduleCommit()` sets `m.committing = true`, returns `tea.Tick(1.2s)`
@@ -80,6 +90,7 @@ Each mode has a dedicated `handle*` method and a `view*` method.
 - `store.NextID()` always reads both `tickets.yaml` and `deleted.yaml` to avoid ID reuse
 - `store.SortedStatuses()` must be called whenever `m.cfg.Statuses` is mutated to keep `m.statuses` consistent
 - After renaming a status, migrate all tickets referencing the old name before persisting
+- `store.ReadLabels()` / `store.WriteLabels()` manage `.todo/labels.yaml`; call `updateKnownLabels()` (not `WriteLabels` directly) from the TUI so the in-memory slice stays consistent
 
 ### TUI mutations
 - Status mutations (`addStatus`, `deleteStatus`, etc.) must also reset `m.colScroll` to `make([]int, len(m.statuses))` to avoid stale offsets
@@ -97,9 +108,13 @@ Each mode has a dedicated `handle*` method and a `view*` method.
 - Add unit tests whenever a non-trivial behavior is introduced or fixed, even if not explicitly requested — prefer table-driven tests
 
 ### Documentation
+- **Documentation must be updated in the same change as the code — no exceptions.** This applies even when the user does not explicitly ask for it.
 - Update `README.md` whenever user-facing behavior, keyboard shortcuts, config fields, or build commands change
-- Update any relevant files in `docs/` when architecture or features change
-- Keep `CLAUDE.md` itself accurate — update it when conventions, file structure, or key patterns change
+- Update `docs/ui-reference.md` whenever a TUI screen, keyboard shortcut, or visual behavior changes
+- Update `docs/data-model.md` whenever a data structure, YAML schema, or persistence file changes
+- Update `docs/architecture.md` whenever the component structure, data flow, or key patterns change
+- Update `docs/developer-guide.md` whenever conventions, helper functions, or implementation patterns change
+- Keep `CLAUDE.md` itself accurate — update it when conventions, file structure, view modes, model fields, or key patterns change
 
 ### Dependencies
 - Avoid adding third-party dependencies; prefer the Go standard library
