@@ -82,7 +82,16 @@ Prints the new ticket number and title on success:
 | `--label` | `-l` | Label/tag to attach (repeatable) |
 | `--status` | `-s` | Initial status (defaults to first configured status) |
 
-### 3. Open the TUI
+### 3. Move a ticket from the command line
+
+```sh
+tasklin move 42 "In Progress"
+tasklin move 42 done          # case-insensitive
+```
+
+Prints `#<id> → <status>` on success. Does nothing if the ticket is already in the target status.
+
+### 4. Open the TUI
 
 Run `tasklin` with no arguments to open the kanban board:
 
