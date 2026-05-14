@@ -91,7 +91,15 @@ tasklin move 42 done          # case-insensitive
 
 Prints `#<id> → <status>` on success. Does nothing if the ticket is already in the target status.
 
-### 4. Open the TUI
+### 4. Delete a ticket from the command line
+
+```sh
+tasklin delete 42
+```
+
+Prints `#<id> <title> deleted` on success and archives the ticket to `deleted.yaml` so IDs are never reused.
+
+### 5. Open the TUI
 
 Run `tasklin` with no arguments to open the kanban board:
 

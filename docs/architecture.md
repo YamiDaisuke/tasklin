@@ -71,6 +71,7 @@ The binary is structured as a thin `cobra` CLI wrapper around a self-contained B
 | `init.go` | `tasklin init` interactive setup wizard; calls `store.Init()` and `hooks` package |
 | `add.go` | `tasklin add <title>` — creates a ticket from the CLI; supports `--label` and `--status` flags |
 | `move.go` | `tasklin move <id> <status>` — moves a ticket to a new status; no-op if already there |
+| `delete.go` | `tasklin delete <id>` — removes a ticket from tickets.yaml and archives it to deleted.yaml |
 | `transition.go` | `tasklin _transition <id> <status>` — internal command used by git hooks only |
 
 ### `internal/model/`
