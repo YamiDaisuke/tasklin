@@ -59,7 +59,30 @@ You will be prompted to:
 
 This creates a `.todo/` folder with `config.yaml` and an empty `tickets.yaml`.
 
-### 2. Open the TUI
+### 2. Create tickets from the command line
+
+Use `tasklin add` to create tickets without opening the TUI:
+
+```sh
+tasklin add "Fix login bug"
+tasklin add "Add dark mode" -l ui -l frontend
+tasklin add "Deploy to staging" -s "In Progress"
+```
+
+Prints the new ticket number and title on success:
+
+```
+#42 Fix login bug
+```
+
+**Flags:**
+
+| Flag | Short | Description |
+|---|---|---|
+| `--label` | `-l` | Label/tag to attach (repeatable) |
+| `--status` | `-s` | Initial status (defaults to first configured status) |
+
+### 3. Open the TUI
 
 Run `tasklin` with no arguments to open the kanban board:
 

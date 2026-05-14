@@ -69,6 +69,7 @@ The binary is structured as a thin `cobra` CLI wrapper around a self-contained B
 |---|---|
 | `root.go` | Cobra root command; detects if `.todo/` exists; calls `tui.Run()` |
 | `init.go` | `tasklin init` interactive setup wizard; calls `store.Init()` and `hooks` package |
+| `add.go` | `tasklin add <title>` — creates a ticket from the CLI; supports `--label` and `--status` flags |
 | `transition.go` | `tasklin _transition <id> <status>` — internal command used by git hooks only |
 
 ### `internal/model/`
