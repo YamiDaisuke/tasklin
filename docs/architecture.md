@@ -73,6 +73,7 @@ The binary is structured as a thin `cobra` CLI wrapper around a self-contained B
 | `move.go` | `tasklin move <id> <status>` — moves a ticket to a new status; no-op if already there |
 | `delete.go` | `tasklin delete <id>` — removes a ticket from tickets.yaml and archives it to deleted.yaml |
 | `update.go` | `tasklin update <id>` — updates title (`--title`) and/or labels (`--add-label`, `--remove-label`); prints a change summary |
+| `show.go` | `tasklin show <id>` — displays ticket status, title, and labels; `--verbose` adds full transition history |
 | `transition.go` | `tasklin _transition <id> <status>` — internal command used by git hooks only |
 
 ### `internal/model/`

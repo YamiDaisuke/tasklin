@@ -124,7 +124,28 @@ Prints the ticket header followed by a line per change:
 | `--add-label` | `-l` | Label to add (repeatable) |
 | `--remove-label` | `-r` | Label to remove (repeatable) |
 
-### 6. Open the TUI
+### 6. Show a ticket
+
+```sh
+tasklin show 42
+tasklin show 42 --verbose   # includes full transition history
+```
+
+Example output:
+
+```
+  #42  Fix login bug
+  ──────────────────────────────────────────────
+  Status    ● In Progress
+  Labels    [backend] [api]
+  Created   15 May 2026
+  ──────────────────────────────────────────────
+  Transitions
+
+    14 May 2026  09:00    To Do → In Progress
+```
+
+### 7. Open the TUI
 
 Run `tasklin` with no arguments to open the kanban board:
 
