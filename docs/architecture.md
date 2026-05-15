@@ -72,6 +72,7 @@ The binary is structured as a thin `cobra` CLI wrapper around a self-contained B
 | `add.go` | `tasklin add <title>` — creates a ticket from the CLI; supports `--label` and `--status` flags |
 | `move.go` | `tasklin move <id> <status>` — moves a ticket to a new status; no-op if already there |
 | `delete.go` | `tasklin delete <id>` — removes a ticket from tickets.yaml and archives it to deleted.yaml |
+| `update.go` | `tasklin update <id>` — updates title (`--title`) and/or labels (`--add-label`, `--remove-label`); prints a change summary |
 | `transition.go` | `tasklin _transition <id> <status>` — internal command used by git hooks only |
 
 ### `internal/model/`

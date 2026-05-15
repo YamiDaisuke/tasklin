@@ -99,7 +99,32 @@ tasklin delete 42
 
 Prints `#<id> <title> deleted` on success and archives the ticket to `deleted.yaml` so IDs are never reused.
 
-### 5. Open the TUI
+### 5. Update a ticket from the command line
+
+```sh
+tasklin update 42 --title "New title"
+tasklin update 42 -l backend -l api      # add labels
+tasklin update 42 -r backend             # remove a label
+tasklin update 42 -t "New title" -l api -r old
+```
+
+Prints the ticket header followed by a line per change:
+
+```
+#42 New title
+  title: "Old title" → "New title"
+  labels: +api, -old
+```
+
+**Flags:**
+
+| Flag | Short | Description |
+|---|---|---|
+| `--title` | `-t` | New title |
+| `--add-label` | `-l` | Label to add (repeatable) |
+| `--remove-label` | `-r` | Label to remove (repeatable) |
+
+### 6. Open the TUI
 
 Run `tasklin` with no arguments to open the kanban board:
 
