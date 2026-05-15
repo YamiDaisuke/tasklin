@@ -280,24 +280,27 @@ for i in "${!STATUSES[@]}"; do
 done
 POOL_SIZE=${#STATUS_POOL[@]}
 
-# Emit tickets.yaml
-{
-  echo "tickets:"
-  now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-  for (( id=1; id<=1000; id++ )); do
-    adj="${ADJECTIVES[$(( (id * 7 + 3) % ${#ADJECTIVES[@]} ))]}"
-    noun="${NOUNS[$(( (id * 13 + 5) % ${#NOUNS[@]} ))]}"
-    title="${adj} ${noun}"
-    status="${STATUS_POOL[$(( (id * 31 + 11) % POOL_SIZE ))]}"
+# Emit one YAML file per ticket into .todo/tickets/
+echo "→ Generating 1 000 ticket files..."
+mkdir -p .todo/tickets .todo/deleted
 
-    # Stagger created_at dates over the past year
-    days_ago=$(( id % 365 ))
-    created=$(date -u -v-"${days_ago}d" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null \
-      || date -u -d "${days_ago} days ago" +"%Y-%m-%dT%H:%M:%SZ")
+now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+for (( id=1; id<=1000; id++ )); do
+  ticket_id=$(printf "%08x" "$id")
+  adj="${ADJECTIVES[$(( (id * 7 + 3) % ${#ADJECTIVES[@]} ))]}"
+  noun="${NOUNS[$(( (id * 13 + 5) % ${#NOUNS[@]} ))]}"
+  title="${adj} ${noun}"
+  status="${STATUS_POOL[$(( (id * 31 + 11) % POOL_SIZE ))]}"
 
-    echo "  - id: ${id}"
-    echo "    title: \"${title}\""
-    echo "    status: \"${status}\""
+  # Stagger created_at dates over the past year
+  days_ago=$(( id % 365 ))
+  created=$(date -u -v-"${days_ago}d" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null \
+    || date -u -d "${days_ago} days ago" +"%Y-%m-%dT%H:%M:%SZ")
+
+  {
+    echo "id: ${ticket_id}"
+    echo "title: \"${title}\""
+    echo "status: \"${status}\""
 
     # Assign 0–2 labels deterministically (≈30% none, 40% one, 30% two)
     lc=$(( (id * 17 + 3) % 10 ))
@@ -314,25 +317,25 @@ POOL_SIZE=${#STATUS_POOL[@]}
       lbl2="${LABELS[$li2]}"
     fi
     if (( lc == 1 )); then
-      echo "    labels:"
-      echo "      - ${lbl1}"
+      echo "labels:"
+      echo "  - ${lbl1}"
     elif (( lc == 2 )); then
-      echo "    labels:"
-      echo "      - ${lbl1}"
-      echo "      - ${lbl2}"
+      echo "labels:"
+      echo "  - ${lbl1}"
+      echo "  - ${lbl2}"
     fi
 
-    echo "    created_at: ${created}"
+    echo "created_at: ${created}"
 
     # Add a transition for anything not in To Do
     if [ "$status" != "To Do" ]; then
-      echo "    transitions:"
-      echo "      - from: To Do"
-      echo "        to: \"${status}\""
-      echo "        at: ${created}"
+      echo "transitions:"
+      echo "  - from: To Do"
+      echo "    to: \"${status}\""
+      echo "    at: ${created}"
     fi
-  done
-} > .todo/tickets.yaml
+  } > ".todo/tickets/${ticket_id}.yaml"
+done
 
 # Write the autocomplete index — all labels from the pool, sorted
 echo "→ Writing .todo/labels.yaml..."

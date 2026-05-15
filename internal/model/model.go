@@ -19,7 +19,7 @@ type Transition struct {
 
 // Ticket is a single backlog item.
 type Ticket struct {
-	ID          int          `yaml:"id"`
+	ID          string       `yaml:"id"`
 	Title       string       `yaml:"title"`
 	Status      string       `yaml:"status"`
 	Labels      []string     `yaml:"labels,omitempty"`
@@ -34,23 +34,6 @@ type Config struct {
 	AutoCommitOnDone  bool     `yaml:"auto_commit_on_done"`
 	MinColWidth       int      `yaml:"min_col_width"`
 	Statuses          []Status `yaml:"statuses"`
-}
-
-// TicketFile is the top-level structure for tickets.yaml / deleted.yaml.
-type TicketFile struct {
-	Tickets []Ticket `yaml:"tickets"`
-}
-
-// BranchTicket records a ticket status override for a branch.
-type BranchTicket struct {
-	TicketID int    `yaml:"ticket_id"`
-	Status   string `yaml:"status"`
-}
-
-// GlobalState is the top-level structure for ~/.config/tasklin/state.yaml.
-// Structure: projects[projectPath][branch] = []BranchTicket
-type GlobalState struct {
-	Projects map[string]map[string][]BranchTicket `yaml:"projects"`
 }
 
 // DefaultStatuses returns the built-in status set.

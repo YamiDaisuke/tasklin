@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 
+	internalgit "github.com/frankcruz/tasklin/internal/git"
+	"github.com/frankcruz/tasklin/internal/hooks"
 	"github.com/frankcruz/tasklin/internal/store"
 	"github.com/frankcruz/tasklin/internal/tui"
 	"github.com/spf13/cobra"
@@ -27,6 +29,18 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		fmt.Println(".todo/ not found — running init first...")
 		if err := runInit(cmd, args); err != nil {
 			return err
+		}
+	}
+
+	migrated, err := s.MigrateIfNeeded()
+	if err != nil {
+		return fmt.Errorf("migration: %w", err)
+	}
+	if migrated {
+		gitRoot := internalgit.RepoRoot(cwd)
+		if gitRoot != "" {
+			cfg, _ := s.ReadConfig()
+			hooks.ReinstallIfPresent(internalgit.GitDir(gitRoot), cfg.DefaultDoneStatus)
 		}
 	}
 

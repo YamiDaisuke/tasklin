@@ -15,15 +15,15 @@ The main screen. Three or more columns, one per status, rendered side by side.
  ║ ╠═╣╚═╗╠╩╗║  ║║║║
  ╩ ╩ ╩╚═╝╩ ╩╩═╝╩╝╚╝  ⎇ main
 ────────────────────────────────────────────────────────────
- TO DO (4)             IN PROGRESS (2)       DONE (3)
+ TO DO (4)                  IN PROGRESS (2)        DONE (3)
 ────────────────────────────────────────────────────────────
-▌ [1] Set up CI        [4] Write unit tests   [2] Init repo
-▌ [bug] [backend]      [backend] [security]   [chore]
+▌ [ab3f92c1] Set up CI     [d7e10f44] Write tests  [00000002] Init repo
+▌ [bug] [backend]          [backend] [security]    [chore]
 ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
-  [5] Add search       [7] Auth middleware    [3] Add models
+  [f9c21a30] Add search     [3b8d5e12] Auth         [00000003] Add models
   [feature]
 ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
-  [6] Dark mode
+  [c04e9a71] Dark mode
   [ux]
 ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
   n new  d del  m move  e edit  l labels  / filter  c config  ? help  q quit
@@ -34,7 +34,7 @@ The main screen. Three or more columns, one per status, rendered side by side.
 - Column headers show the status name (uppercase) and ticket count
 - The focused ticket is marked with an amber `▌` indicator and bold white text; the indicator extends across all label chip rows of the same ticket
 - All other tickets render in dim gray
-- Tickets are sorted by ID (ascending) within each column
+- Tickets are sorted by creation time (`created_at`, ascending) within each column
 - Labels are shown as `[chip]` rows below the title, up to 2 rows per ticket; chips are cyan, bright cyan when the ticket is selected
 - A dim `╌` separator line appears between each ticket for visual separation
 - A slim scrollbar appears on the right edge of any column that overflows:
@@ -63,7 +63,7 @@ Shows the full history of the selected ticket.
  ║ ╠═╣╚═╗╠╩╗║  ║║║║
  ╩ ╩ ╩╚═╝╩ ╩╩═╝╩╝╚╝  ⎇ main
 ────────────────────────────────────────────────────────────
-  Ticket #7
+  Ticket #3b8d5e12
 
   Title      Auth middleware
   Status     In Progress

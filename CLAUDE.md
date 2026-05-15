@@ -30,9 +30,9 @@ cmd/
   init.go        — `tasklin init` interactive setup
   transition.go  — `tasklin _transition` called by git hooks
 internal/
-  model/         — pure data types: Ticket, Status, Config, GlobalState
-  store/         — YAML read/write, NextID, SortedStatuses, branch-state helpers
-  git/           — git root detection, current branch, IsMainBranch
+  model/         — pure data types: Ticket, Status, Config
+  store/         — YAML read/write, NewID, SortedStatuses, MigrateIfNeeded
+  git/           — git root detection, current branch
   hooks/         — git hook file generation (post-commit, post-merge, pre-commit)
   tui/           — all TUI logic (single file: tui.go)
 resources/
@@ -87,7 +87,8 @@ Each mode has a dedicated `handle*` method and a `view*` method.
 
 ### Data layer
 - All persistence goes through `internal/store` — never read/write YAML files directly from the TUI
-- `store.NextID()` always reads both `tickets.yaml` and `deleted.yaml` to avoid ID reuse
+- Each ticket has its own file: `store.WriteTicket(t)` writes `tickets/<id>.yaml`; `store.DeleteTicketFile(id)` removes it
+- `store.NewID()` generates a random 8-char hex ID; never use sequential integers
 - `store.SortedStatuses()` must be called whenever `m.cfg.Statuses` is mutated to keep `m.statuses` consistent
 - After renaming a status, migrate all tickets referencing the old name before persisting
 - `store.ReadLabels()` / `store.WriteLabels()` manage `.todo/labels.yaml`; call `updateKnownLabels()` (not `WriteLabels` directly) from the TUI so the in-memory slice stays consistent
@@ -95,7 +96,7 @@ Each mode has a dedicated `handle*` method and a `view*` method.
 ### TUI mutations
 - Status mutations (`addStatus`, `deleteStatus`, etc.) must also reset `m.colScroll` to `make([]int, len(m.statuses))` to avoid stale offsets
 - `clampScroll()` must be called after any change to `m.rowIdx` or `m.colIdx` on the board
-- `m.persist()` saves the current ticket slice to `tickets.yaml`; call it after any ticket mutation
+- For ticket mutations, call `m.store.WriteTicket(m.tickets[i])` on the changed ticket; do not rewrite the entire list
 
 ### Shell scripts in auto-commit
 - Always use `bash -c` (not `sh -c`) — the script uses process substitution `< <(...)` which is bash-only

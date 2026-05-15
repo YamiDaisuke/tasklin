@@ -41,8 +41,8 @@ The sample project is regenerated automatically on first run. Use `make sample C
 The TUI (`internal/tui/tui.go`) never reads or writes files directly. All persistence goes through `internal/store`:
 
 ```go
-// correct
-m.persist()  // calls store.WriteTickets(m.tickets)
+// correct — write only the ticket that changed
+_ = m.store.WriteTicket(m.tickets[i])
 
 // wrong — don't do this
 yaml.Marshal(m.tickets)
@@ -291,7 +291,7 @@ type Ticket struct {
 In `viewBoard()`, the title line is built as:
 
 ```go
-title := truncate(fmt.Sprintf("[%d] %s", t.ID, t.Title), contentWidth-3)
+label := fmt.Sprintf("[%s] %s", t.ID, t.Title)
 ```
 
 Adjust this to include your field if appropriate.
@@ -309,35 +309,28 @@ Add the field to the YAML schema example in `docs/data-model.md`.
 ### Reading
 
 ```go
-tickets, err := s.ReadTickets()
+tickets, err := s.ReadTickets()   // reads all *.yaml from tickets/
 cfg, err := s.ReadConfig()
-deleted, err := s.ReadDeleted()
+deleted, err := s.ReadDeleted()   // reads all *.yaml from deleted/
 ```
 
-### Writing
+### Writing a single ticket
+
+Always write only the ticket that changed — do not rewrite the entire list:
 
 ```go
-_ = s.WriteTickets(tickets)
-_ = s.WriteConfig(cfg)
+_ = s.WriteTicket(ticket)           // creates/updates tickets/<id>.yaml
+_ = s.WriteDeletedTicket(ticket)    // creates deleted/<id>.yaml
+_ = s.DeleteTicketFile(ticket.ID)   // removes tickets/<id>.yaml
 ```
 
-### Getting the next ID
+### Generating a new ID
 
 ```go
-id, err := s.NextID()  // reads both tickets.yaml and deleted.yaml
+id, err := store.NewID()  // returns a random 8-char hex string, e.g. "ab3f92c1"
 ```
 
-### Branch state
-
-```go
-gs, err := store.ReadGlobalState()
-overrides := store.GetBranchOverrides(gs, projectDir, branch)
-tickets = store.ApplyBranchOverrides(tickets, overrides)
-
-// after a move on a non-main branch:
-store.SetBranchOverride(gs, projectDir, branch, ticketID, newStatus)
-_ = store.WriteGlobalState(gs)
-```
+IDs are random and collision-resistant across machines — no coordination required.
 
 ---
 
@@ -389,19 +382,16 @@ make test-ci     # CI mode, writes coverage.out
 
 ### Writing a test
 
-Prefer table-driven tests:
+Prefer table-driven tests. Use string IDs when constructing fixtures:
 
 ```go
-func TestNextID(t *testing.T) {
+func TestSomeBehaviour(t *testing.T) {
     cases := []struct {
         name    string
-        active  []model.Ticket
-        deleted []model.Ticket
-        want    int
+        tickets []model.Ticket
+        want    string
     }{
-        {"empty store", nil, nil, 1},
-        {"active only", tickets(1, 2, 3), nil, 4},
-        {"with deleted", tickets(1, 2), tickets(3, 5), 6},
+        {"single ticket", []model.Ticket{{ID: "abc00001", Status: "To Do"}}, "abc00001"},
     }
     for _, tc := range cases {
         t.Run(tc.name, func(t *testing.T) {
@@ -432,9 +422,10 @@ Use the exported accessor methods (`ColIdx()`, `RowIdx()`, `Mode()`) rather than
 tasklin stores everything as human-readable YAML. When something looks wrong in the TUI, check the files directly:
 
 ```sh
-cat .todo/tickets.yaml
+ls .todo/tickets/            # list active ticket files
+cat .todo/tickets/ab3f92c1.yaml
 cat .todo/config.yaml
-cat ~/.config/tasklin/state.yaml
+ls .todo/deleted/            # list deleted ticket files
 ```
 
 ### Run against a clean sample
