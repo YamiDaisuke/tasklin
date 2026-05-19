@@ -59,7 +59,93 @@ You will be prompted to:
 
 This creates a `.todo/` folder with `config.yaml` and an empty `tickets.yaml`.
 
-### 2. Open the TUI
+### 2. Create tickets from the command line
+
+Use `tasklin add` to create tickets without opening the TUI:
+
+```sh
+tasklin add "Fix login bug"
+tasklin add "Add dark mode" -l ui -l frontend
+tasklin add "Deploy to staging" -s "In Progress"
+```
+
+Prints the new ticket number and title on success:
+
+```
+#42 Fix login bug
+```
+
+**Flags:**
+
+| Flag | Short | Description |
+|---|---|---|
+| `--label` | `-l` | Label/tag to attach (repeatable) |
+| `--status` | `-s` | Initial status (defaults to first configured status) |
+
+### 3. Move a ticket from the command line
+
+```sh
+tasklin move 42 "In Progress"
+tasklin move 42 done          # case-insensitive
+```
+
+Prints `#<id> → <status>` on success. Does nothing if the ticket is already in the target status.
+
+### 4. Delete a ticket from the command line
+
+```sh
+tasklin delete 42
+```
+
+Prints `#<id> <title> deleted` on success and archives the ticket to `deleted.yaml` so IDs are never reused.
+
+### 5. Update a ticket from the command line
+
+```sh
+tasklin update 42 --title "New title"
+tasklin update 42 -l backend -l api      # add labels
+tasklin update 42 -r backend             # remove a label
+tasklin update 42 -t "New title" -l api -r old
+```
+
+Prints the ticket header followed by a line per change:
+
+```
+#42 New title
+  title: "Old title" → "New title"
+  labels: +api, -old
+```
+
+**Flags:**
+
+| Flag | Short | Description |
+|---|---|---|
+| `--title` | `-t` | New title |
+| `--add-label` | `-l` | Label to add (repeatable) |
+| `--remove-label` | `-r` | Label to remove (repeatable) |
+
+### 6. Show a ticket
+
+```sh
+tasklin show 42
+tasklin show 42 --verbose   # includes full transition history
+```
+
+Example output:
+
+```
+  #42  Fix login bug
+  ──────────────────────────────────────────────
+  Status    ● In Progress
+  Labels    [backend] [api]
+  Created   15 May 2026
+  ──────────────────────────────────────────────
+  Transitions
+
+    14 May 2026  09:00    To Do → In Progress
+```
+
+### 7. Open the TUI
 
 Run `tasklin` with no arguments to open the kanban board:
 
