@@ -59,7 +59,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	id, err := s.NextID()
+	id, err := store.NewID()
 	if err != nil {
 		return err
 	}
@@ -72,12 +72,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		CreatedAt: time.Now().UTC(),
 	}
 
-	tickets, err := s.ReadTickets()
-	if err != nil {
-		return err
-	}
-	tickets = append(tickets, ticket)
-	if err := s.WriteTickets(tickets); err != nil {
+	if err := s.WriteTicket(ticket); err != nil {
 		return err
 	}
 
@@ -101,7 +96,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	fmt.Printf("#%d %s\n", id, title)
+	fmt.Printf("#%s %s\n", id, title)
 	return nil
 }
 

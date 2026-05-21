@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/frankcruz/tasklin/internal/store"
@@ -22,10 +21,7 @@ var updateCmd = &cobra.Command{
 }
 
 func runUpdate(cmd *cobra.Command, args []string) error {
-	ticketID, err := strconv.Atoi(args[0])
-	if err != nil {
-		return fmt.Errorf("invalid ticket id: %s", args[0])
-	}
+	ticketID := args[0]
 
 	if !cmd.Flags().Changed("title") && !cmd.Flags().Changed("add-label") && !cmd.Flags().Changed("remove-label") {
 		return fmt.Errorf("nothing to update: specify --title, --add-label, or --remove-label")
@@ -53,7 +49,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if idx == -1 {
-		return fmt.Errorf("ticket %d not found", ticketID)
+		return fmt.Errorf("ticket %s not found", ticketID)
 	}
 
 	t := &tickets[idx]
@@ -109,11 +105,11 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(changes) == 0 {
-		fmt.Printf("#%d no changes\n", ticketID)
+		fmt.Printf("#%s no changes\n", ticketID)
 		return nil
 	}
 
-	if err := s.WriteTickets(tickets); err != nil {
+	if err := s.WriteTicket(*t); err != nil {
 		return err
 	}
 
@@ -137,7 +133,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	fmt.Printf("#%d %s\n", t.ID, t.Title)
+	fmt.Printf("#%s %s\n", t.ID, t.Title)
 	for _, c := range changes {
 		fmt.Println(c)
 	}

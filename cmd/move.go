@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -20,10 +19,7 @@ var moveCmd = &cobra.Command{
 }
 
 func runMove(cmd *cobra.Command, args []string) error {
-	ticketID, err := strconv.Atoi(args[0])
-	if err != nil {
-		return fmt.Errorf("invalid ticket id: %s", args[0])
-	}
+	ticketID := args[0]
 	targetStatus := args[1]
 
 	cwd, err := os.Getwd()
@@ -68,17 +64,16 @@ func runMove(cmd *cobra.Command, args []string) error {
 		tr := model.Transition{From: t.Status, To: resolved, At: time.Now().UTC()}
 		tickets[i].Status = resolved
 		tickets[i].Transitions = append(tickets[i].Transitions, tr)
+		if err := s.WriteTicket(tickets[i]); err != nil {
+			return err
+		}
 		break
 	}
 	if !found {
-		return fmt.Errorf("ticket %d not found", ticketID)
+		return fmt.Errorf("ticket %s not found", ticketID)
 	}
 
-	if err := s.WriteTickets(tickets); err != nil {
-		return err
-	}
-
-	fmt.Printf("#%d → %s\n", ticketID, resolved)
+	fmt.Printf("#%s → %s\n", ticketID, resolved)
 	return nil
 }
 
