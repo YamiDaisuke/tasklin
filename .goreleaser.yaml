@@ -1,0 +1,70 @@
+version: 2
+
+project_name: tasklin
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.buildDate={{.Date}}
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+brews:
+  - name: tasklin
+    homepage: "https://github.com/yamidaisuke/tasklin"
+    description: "Keyboard-driven CLI/TUI kanban board for personal project backlogs"
+    license: "MIT"
+    repository:
+      owner: yamidaisuke
+      name: tasklin
+      branch: main
+      token: "{{ .Env.GITHUB_TOKEN }}"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "chore: update Homebrew formula to {{ .Tag }}"
+    directory: Formula
+    install: |
+      bin.install "tasklin"
+    test: |
+      system "#{bin}/tasklin", "--version"
+
+release:
+  github:
+    owner: yamidaisuke
+    name: tasklin
+  draft: false
+  generate_release_notes: true

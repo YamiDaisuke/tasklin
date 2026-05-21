@@ -22,6 +22,27 @@ make build-all    # cross-compile for all platforms
 
 Never use `go build .` directly — always use `make build` so ldflags (version, commit, buildDate) are injected correctly.
 
+## Release & distribution
+
+Releases are driven by GoReleaser (`.goreleaser.yaml`) via the `.github/workflows/release.yml` workflow. Push a `v*.*.*` tag to trigger it.
+
+GoReleaser:
+- Builds cross-platform binaries (darwin/amd64, darwin/arm64, linux/amd64, linux/arm64, windows/amd64)
+- Creates `.tar.gz` / `.zip` archives
+- Generates `checksums.txt` (SHA-256)
+- Creates the GitHub release
+- Commits an updated `Formula/tasklin.rb` to `main` so the Homebrew tap is always current
+
+Users install via Homebrew:
+```sh
+brew tap yamidaisuke/tasklin https://github.com/yamidaisuke/tasklin
+brew install tasklin
+```
+
+`Formula/tasklin.rb` is auto-managed by GoReleaser — do not edit it by hand.
+
+Version info is injected at link time via ldflags into `main.version`, `main.commit`, and `main.buildDate`. `cmd.Execute` accepts these as parameters and sets `rootCmd.Version` so `tasklin --version` works.
+
 ## Architecture
 
 ```
