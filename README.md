@@ -57,7 +57,7 @@ You will be prompted to:
 - Keep or customise the default statuses (To Do / In Progress / Done)
 - Optionally install git hooks that auto-transition tickets on commit/merge
 
-This creates a `.todo/` folder with `config.yaml` and an empty `tickets.yaml`.
+This creates a `.todo/` folder with `config.yaml` and empty `tickets/` and `deleted/` directories.
 
 ### 2. Create tickets from the command line
 
@@ -172,7 +172,7 @@ If `.todo/` does not exist yet, the init flow runs automatically.
 | `l` | Edit labels on the selected ticket |
 | `/` | Filter board by label |
 | `m` | Open the move dialog to pick a target status |
-| `d` | Delete the selected ticket (soft-deleted to `deleted.yaml`) |
+| `d` | Delete the selected ticket (soft-deleted to `deleted/`) |
 | `c` | Open the config screen |
 | `?` | Show help overlay |
 | `q` / `Ctrl+C` | Quit |
@@ -212,10 +212,10 @@ All data lives in `.todo/` at the project root and is plain YAML — safe to com
 
 ```
 .todo/
-├── config.yaml    # statuses, title limit, default done status, auto-commit flag
-├── tickets.yaml   # active tickets
-├── deleted.yaml   # soft-deleted tickets (never permanently removed)
-└── labels.yaml    # index of all known labels (used for autocomplete)
+├── config.yaml      # statuses, title limit, default done status, auto-commit flag
+├── tickets/         # one YAML file per active ticket (e.g. ab3f92c1.yaml)
+├── deleted/         # one YAML file per soft-deleted ticket (never removed)
+└── labels.yaml      # index of all known labels (used for autocomplete)
 ```
 
 ### config.yaml fields
@@ -248,17 +248,9 @@ When `auto_commit_on_done` is enabled, moving a ticket to the Done status trigge
 1. Any **new (untracked) files** are listed — confirm each with `y/N`
 2. Any **deleted files** are listed — confirm each with `y/N`
 3. `git add -p` runs for interactive hunk selection on modified files
-4. A commit is created with the message `[ID] Title` if anything was staged
+4. A commit is created with the message `[ab3f92c1] Title` (8-char hex ticket ID) if anything was staged
 
 Enable it from the in-app config screen (`c`) or by editing `.todo/config.yaml` directly.
-
-### Global state
-
-Branch-state tracking (used when working on non-main branches) is stored at:
-
-```
-~/.config/tasklin/state.yaml
-```
 
 ---
 
@@ -266,9 +258,11 @@ Branch-state tracking (used when working on non-main branches) is stored at:
 
 When you run `tasklin init` inside a git repository you are offered the option to install hooks:
 
-- **post-commit** — if the commit message starts with `[ID]`, transitions that ticket to the done status
-- **post-merge** — if the merged branch name contains `[ID]`, transitions that ticket
+- **commit-msg** — if the commit message starts with `[ab3f92c1]` (8-char hex ID), transitions that ticket to the done status
+- **post-merge** — if the merged branch name contains `[ab3f92c1]`, transitions that ticket
 - **pre-commit** *(optional)* — automatically stages `.todo/` in every commit
+
+If you installed hooks before upgrading to per-file storage, run `tasklin` once to trigger automatic hook reinstall, or re-run `tasklin init` to reinstall manually.
 
 ---
 

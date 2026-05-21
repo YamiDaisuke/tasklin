@@ -31,7 +31,3 @@ func GitDir(root string) string {
 	return filepath.Join(root, ".git")
 }
 
-// IsMainBranch returns true if branch is main or master.
-func IsMainBranch(branch string) bool {
-	return branch == "main" || branch == "master"
-}

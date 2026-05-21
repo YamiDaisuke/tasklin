@@ -3,6 +3,7 @@ package store_test
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
@@ -23,7 +24,7 @@ func TestInitialised_False(t *testing.T) {
 	}
 }
 
-func TestInit_CreatesFiles(t *testing.T) {
+func TestInit_CreatesDirectories(t *testing.T) {
 	s := newTempStore(t)
 	cfg := model.DefaultConfig()
 	if err := s.Init(cfg); err != nil {
@@ -37,10 +38,15 @@ func TestInit_CreatesFiles(t *testing.T) {
 	if _, err := os.Stat(configPath); err != nil {
 		t.Errorf("config.yaml not found: %v", err)
 	}
-	// tickets.yaml must exist
-	ticketsPath := filepath.Join(s.TodoPath(), "tickets.yaml")
+	// tickets/ directory must exist
+	ticketsPath := filepath.Join(s.TodoPath(), "tickets")
 	if _, err := os.Stat(ticketsPath); err != nil {
-		t.Errorf("tickets.yaml not found: %v", err)
+		t.Errorf("tickets/ dir not found: %v", err)
+	}
+	// deleted/ directory must exist
+	deletedPath := filepath.Join(s.TodoPath(), "deleted")
+	if _, err := os.Stat(deletedPath); err != nil {
+		t.Errorf("deleted/ dir not found: %v", err)
 	}
 }
 
@@ -75,11 +81,13 @@ func TestWriteReadTickets(t *testing.T) {
 		t.Fatal(err)
 	}
 	tickets := []model.Ticket{
-		{ID: 1, Title: "First ticket", Status: "To Do", CreatedAt: time.Now().UTC()},
-		{ID: 2, Title: "Second ticket", Status: "In Progress", CreatedAt: time.Now().UTC()},
+		{ID: "abc00001", Title: "First ticket", Status: "To Do", CreatedAt: time.Now().UTC()},
+		{ID: "abc00002", Title: "Second ticket", Status: "In Progress", CreatedAt: time.Now().UTC()},
 	}
-	if err := s.WriteTickets(tickets); err != nil {
-		t.Fatalf("WriteTickets: %v", err)
+	for _, tk := range tickets {
+		if err := s.WriteTicket(tk); err != nil {
+			t.Fatalf("WriteTicket: %v", err)
+		}
 	}
 	got, err := s.ReadTickets()
 	if err != nil {
@@ -88,69 +96,73 @@ func TestWriteReadTickets(t *testing.T) {
 	if len(got) != len(tickets) {
 		t.Fatalf("expected %d tickets, got %d", len(tickets), len(got))
 	}
-	for i, tk := range got {
-		if tk.ID != tickets[i].ID {
-			t.Errorf("ticket %d: ID mismatch: want %d, got %d", i, tickets[i].ID, tk.ID)
+	byID := map[string]model.Ticket{}
+	for _, tk := range got {
+		byID[tk.ID] = tk
+	}
+	for _, want := range tickets {
+		got, ok := byID[want.ID]
+		if !ok {
+			t.Errorf("ticket %s not found", want.ID)
+			continue
 		}
-		if tk.Title != tickets[i].Title {
-			t.Errorf("ticket %d: Title mismatch: want %q, got %q", i, tickets[i].Title, tk.Title)
+		if got.Title != want.Title {
+			t.Errorf("ticket %s: Title mismatch: want %q, got %q", want.ID, want.Title, got.Title)
 		}
 	}
 }
 
-func TestNextID_Empty(t *testing.T) {
+func TestDeleteTicketFile(t *testing.T) {
 	s := newTempStore(t)
 	if err := s.Init(model.DefaultConfig()); err != nil {
 		t.Fatal(err)
 	}
-	id, err := s.NextID()
-	if err != nil {
-		t.Fatalf("NextID: %v", err)
+	tk := model.Ticket{ID: "abc00001", Title: "task", Status: "To Do", CreatedAt: time.Now().UTC()}
+	if err := s.WriteTicket(tk); err != nil {
+		t.Fatalf("WriteTicket: %v", err)
 	}
-	if id != 1 {
-		t.Errorf("expected id 1, got %d", id)
+	if err := s.DeleteTicketFile(tk.ID); err != nil {
+		t.Fatalf("DeleteTicketFile: %v", err)
+	}
+	got, err := s.ReadTickets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected 0 tickets after delete, got %d", len(got))
 	}
 }
 
-func TestNextID_AfterTickets(t *testing.T) {
+func TestReadTickets_EmptyDir(t *testing.T) {
 	s := newTempStore(t)
 	if err := s.Init(model.DefaultConfig()); err != nil {
 		t.Fatal(err)
 	}
-	tickets := []model.Ticket{
-		{ID: 1, Title: "a", Status: "To Do"},
-		{ID: 3, Title: "b", Status: "Done"},
-	}
-	if err := s.WriteTickets(tickets); err != nil {
-		t.Fatal(err)
-	}
-	id, err := s.NextID()
+	got, err := s.ReadTickets()
 	if err != nil {
-		t.Fatalf("NextID: %v", err)
+		t.Fatalf("ReadTickets on empty dir: %v", err)
 	}
-	if id != 4 {
-		t.Errorf("expected id 4, got %d", id)
+	if len(got) != 0 {
+		t.Errorf("expected 0 tickets, got %d", len(got))
 	}
 }
 
-func TestNextID_NeverReusesDeleted(t *testing.T) {
-	s := newTempStore(t)
-	if err := s.Init(model.DefaultConfig()); err != nil {
-		t.Fatal(err)
-	}
-	// Active has id 1, deleted has id 5.
-	if err := s.WriteTickets([]model.Ticket{{ID: 1, Title: "a", Status: "To Do"}}); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.WriteDeleted([]model.Ticket{{ID: 5, Title: "deleted", Status: "Done"}}); err != nil {
-		t.Fatal(err)
-	}
-	id, err := s.NextID()
+func TestNewID(t *testing.T) {
+	hexRe := regexp.MustCompile(`^[0-9a-f]{8}$`)
+	id, err := store.NewID()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("NewID: %v", err)
 	}
-	if id != 6 {
-		t.Errorf("expected id 6 (max of active+deleted+1), got %d", id)
+	if !hexRe.MatchString(id) {
+		t.Errorf("NewID returned %q, want 8 lowercase hex chars", id)
+	}
+	// Two calls should produce different IDs.
+	id2, err := store.NewID()
+	if err != nil {
+		t.Fatalf("NewID (second call): %v", err)
+	}
+	if id == id2 {
+		t.Error("two NewID calls returned the same value")
 	}
 }
 

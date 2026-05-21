@@ -54,7 +54,7 @@ var configFields = []cfgFieldDef{
 type Model struct {
 	store          *store.Store
 	cfg            model.Config
-	tickets        []model.Ticket // runtime (branch overrides applied)
+	tickets        []model.Ticket
 	statuses       []model.Status // sorted
 	colIdx         int            // focused column
 	colOffset      int            // first visible column (horizontal scroll)
@@ -71,8 +71,8 @@ type Model struct {
 	inputBuf        string
 	inputCursor     int // cursor position in runes within inputBuf
 	err             error
-	branch          string
-	projectDir      string
+	branch     string
+	projectDir string
 	width           int
 	height          int
 	knownLabels     []string // all labels seen, persisted for autocomplete
@@ -81,7 +81,7 @@ type Model struct {
 	acIdx           int      // selected suggestion index (-1 = none)
 }
 
-// New creates a TUI model for the given store, applying branch overrides.
+// New creates a TUI model for the given store.
 func New(s *store.Store, projectDir string) (Model, error) {
 	cfg, err := s.ReadConfig()
 	if err != nil {
@@ -93,13 +93,6 @@ func New(s *store.Store, projectDir string) (Model, error) {
 	}
 
 	branch := internalgit.CurrentBranch(projectDir)
-	if branch != "" && !internalgit.IsMainBranch(branch) {
-		gs, err := store.ReadGlobalState()
-		if err == nil {
-			overrides := store.GetBranchOverrides(gs, projectDir, branch)
-			tickets = store.ApplyBranchOverrides(tickets, overrides)
-		}
-	}
 
 	knownLabels, _ := s.ReadLabels()
 	if len(knownLabels) == 0 {
@@ -687,7 +680,7 @@ func (m Model) autoCommitCmd(ticket model.Ticket, targetStatus string) tea.Cmd {
 	if gitRoot == "" {
 		return nil
 	}
-	commitMsg := fmt.Sprintf("[%d] %s", ticket.ID, ticket.Title)
+	commitMsg := fmt.Sprintf("[%s] %s", ticket.ID, ticket.Title)
 	script := `
 cd "$GIT_ROOT"
 
@@ -849,7 +842,7 @@ func (m Model) handleFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // --- data mutations ---
 
 func (m *Model) addTicket(title string) {
-	id, err := m.store.NextID()
+	id, err := store.NewID()
 	if err != nil {
 		m.err = err
 		return
@@ -862,7 +855,7 @@ func (m *Model) addTicket(title string) {
 		CreatedAt: time.Now().UTC(),
 	}
 	m.tickets = append(m.tickets, t)
-	m.persist()
+	_ = m.store.WriteTicket(t)
 }
 
 func (m *Model) editTicket(title string) {
@@ -874,10 +867,10 @@ func (m *Model) editTicket(title string) {
 	for i, t := range m.tickets {
 		if t.ID == selected.ID {
 			m.tickets[i].Title = title
+			_ = m.store.WriteTicket(m.tickets[i])
 			break
 		}
 	}
-	m.persist()
 }
 
 func (m *Model) moveSelected(targetStatus string) {
@@ -891,22 +884,10 @@ func (m *Model) moveSelected(targetStatus string) {
 			tr := model.Transition{From: t.Status, To: targetStatus, At: time.Now().UTC()}
 			m.tickets[i].Status = targetStatus
 			m.tickets[i].Transitions = append(m.tickets[i].Transitions, tr)
+			_ = m.store.WriteTicket(m.tickets[i])
 			break
 		}
 	}
-
-	// Branch tracking.
-	branch := internalgit.CurrentBranch(m.projectDir)
-	if branch != "" && !internalgit.IsMainBranch(branch) {
-		gs, err := store.ReadGlobalState()
-		if err == nil {
-			store.SetBranchOverride(&gs, m.projectDir, branch, selected.ID, targetStatus)
-			_ = store.WriteGlobalState(gs)
-		}
-		// Don't write to tickets.yaml on non-main branches.
-		return
-	}
-	m.persist()
 }
 
 func (m *Model) deleteSelected() {
@@ -915,9 +896,8 @@ func (m *Model) deleteSelected() {
 		return
 	}
 	selected := col[m.rowIdx]
-	deleted, _ := m.store.ReadDeleted()
-	deleted = append(deleted, selected)
-	_ = m.store.WriteDeleted(deleted)
+	_ = m.store.WriteDeletedTicket(selected)
+	_ = m.store.DeleteTicketFile(selected.ID)
 
 	newTickets := make([]model.Ticket, 0, len(m.tickets)-1)
 	for _, t := range m.tickets {
@@ -929,15 +909,9 @@ func (m *Model) deleteSelected() {
 	if m.rowIdx > 0 {
 		m.rowIdx--
 	}
-	m.persist()
 }
 
-func (m *Model) persist() {
-	// Only write tickets that don't have branch overrides pending.
-	_ = m.store.WriteTickets(m.tickets)
-}
-
-func (m *Model) addLabelToTicket(ticketID int, label string) {
+func (m *Model) addLabelToTicket(ticketID string, label string) {
 	for i, t := range m.tickets {
 		if t.ID == ticketID {
 			for _, l := range t.Labels {
@@ -946,14 +920,14 @@ func (m *Model) addLabelToTicket(ticketID int, label string) {
 				}
 			}
 			m.tickets[i].Labels = append(m.tickets[i].Labels, label)
+			_ = m.store.WriteTicket(m.tickets[i])
 			break
 		}
 	}
 	m.updateKnownLabels(label)
-	m.persist()
 }
 
-func (m *Model) removeLabelFromTicket(ticketID int, label string) {
+func (m *Model) removeLabelFromTicket(ticketID string, label string) {
 	for i, t := range m.tickets {
 		if t.ID == ticketID {
 			out := make([]string, 0, len(t.Labels))
@@ -963,10 +937,10 @@ func (m *Model) removeLabelFromTicket(ticketID int, label string) {
 				}
 			}
 			m.tickets[i].Labels = out
+			_ = m.store.WriteTicket(m.tickets[i])
 			break
 		}
 	}
-	m.persist()
 }
 
 func (m *Model) updateKnownLabels(label string) {
@@ -1012,10 +986,10 @@ func (m *Model) updateStatusName(idx int, name string) {
 	for k := range m.tickets {
 		if m.tickets[k].Status == old {
 			m.tickets[k].Status = name
+			_ = m.store.WriteTicket(m.tickets[k])
 		}
 	}
 	m.statuses = store.SortedStatuses(m.cfg.Statuses)
-	m.persist()
 }
 
 func (m *Model) updateStatusColor(idx int, color string) {
@@ -1138,7 +1112,7 @@ func (m *Model) clampScroll() {
 	used := 0
 	for ti := scroll; ti <= m.rowIdx && ti < len(tickets); ti++ {
 		t := tickets[ti]
-		label := fmt.Sprintf("[%d] %s", t.ID, t.Title)
+		label := fmt.Sprintf("[%s] %s", t.ID, t.Title)
 		used += len(wrapText(label, approxTextW)) + len(chipRows(t.Labels, approxTextW))
 		if ti < len(tickets)-1 {
 			used++ // separator
@@ -1149,7 +1123,7 @@ func (m *Model) clampScroll() {
 	for used > vis && scroll < m.rowIdx {
 		// Subtract the height of the ticket leaving the top.
 		t := tickets[scroll]
-		label := fmt.Sprintf("[%d] %s", t.ID, t.Title)
+		label := fmt.Sprintf("[%s] %s", t.ID, t.Title)
 		used -= len(wrapText(label, approxTextW)) + len(chipRows(t.Labels, approxTextW))
 		if scroll < len(tickets)-1 {
 			used-- // separator that was after this ticket
@@ -1170,7 +1144,7 @@ func (m Model) ticketsInCol(statusName string) []model.Ticket {
 		}
 		result = append(result, t)
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	sort.Slice(result, func(i, j int) bool { return result[i].CreatedAt.Before(result[j].CreatedAt) })
 	return result
 }
 
@@ -1315,7 +1289,7 @@ func (m Model) viewBoard() string {
 
 		// ticketHeight returns the number of display rows a ticket occupies.
 		ticketHeight := func(t model.Ticket, tw int) int {
-			label := fmt.Sprintf("[%d] %s", t.ID, t.Title)
+			label := fmt.Sprintf("[%s] %s", t.ID, t.Title)
 			return len(wrapText(label, tw)) + len(chipRows(t.Labels, tw))
 		}
 
@@ -1392,7 +1366,7 @@ func (m Model) viewBoard() string {
 		drows := make([]drow, 0, ticketRows)
 		for ti := scrollOffset; ti < len(tickets) && len(drows) < ticketRows; ti++ {
 			t := tickets[ti]
-			label := fmt.Sprintf("[%d] %s", t.ID, t.Title)
+			label := fmt.Sprintf("[%s] %s", t.ID, t.Title)
 			for li, line := range wrapText(label, textW) {
 				if len(drows) >= ticketRows {
 					break
@@ -1713,7 +1687,7 @@ func (m Model) viewDetail() string {
 		panelHints([][2]string{{"Esc", "close"}}),
 		"",
 	)
-	return m.centeredOverlay(formPanel(fmt.Sprintf("Ticket #%d", t.ID), rows, innerW))
+	return m.centeredOverlay(formPanel(fmt.Sprintf("Ticket #%s", t.ID), rows, innerW))
 }
 
 func (m Model) viewMoveMenu() string {

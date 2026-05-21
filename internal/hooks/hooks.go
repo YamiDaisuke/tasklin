@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // findTasklin is a shell snippet that locates the tasklin binary.
@@ -31,8 +32,8 @@ fi
 func InstallCommitMsg(gitDir, doneStatus string) error {
 	script := fmt.Sprintf(`#!/bin/sh
 MSG=$(cat "$1")
-if echo "$MSG" | grep -qE '^\[([0-9]+)\]'; then
-  TICKET_ID=$(echo "$MSG" | grep -oE '^\[([0-9]+)\]' | tr -d '[]')
+if echo "$MSG" | grep -qE '^\[([0-9a-f]{8})\]'; then
+  TICKET_ID=$(echo "$MSG" | grep -oE '^\[([0-9a-f]{8})\]' | tr -d '[]')
 %s
   "$TASKLIN" _transition "$TICKET_ID" "%s" && git add .todo/
 fi
@@ -46,8 +47,8 @@ fi
 func InstallPostMerge(gitDir, doneStatus string) error {
 	script := fmt.Sprintf(`#!/bin/sh
 BRANCH=$(git reflog | awk 'NR==1{print $6}' | sed 's/.*\///')
-if echo "$BRANCH" | grep -qE '\[([0-9]+)\]'; then
-  TICKET_ID=$(echo "$BRANCH" | grep -oE '\[([0-9]+)\]' | tr -d '[]')
+if echo "$BRANCH" | grep -qE '\[([0-9a-f]{8})\]'; then
+  TICKET_ID=$(echo "$BRANCH" | grep -oE '\[([0-9a-f]{8})\]' | tr -d '[]')
 %s
   "$TASKLIN" _transition "$TICKET_ID" "%s" && git add .todo/ && git commit --amend --no-edit --no-verify
 fi
@@ -61,6 +62,27 @@ func InstallPreCommit(gitDir string) error {
 git add .todo/
 `
 	return writeHook(gitDir, "pre-commit", script)
+}
+
+// ReinstallIfPresent reinstalls commit-msg and post-merge hooks if they already
+// exist and reference tasklin, updating them to the current hook format.
+func ReinstallIfPresent(gitDir, doneStatus string) {
+	for _, name := range []string{"commit-msg", "post-merge"} {
+		p := filepath.Join(gitDir, "hooks", name)
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		if !strings.Contains(string(data), "tasklin") {
+			continue
+		}
+		switch name {
+		case "commit-msg":
+			_ = InstallCommitMsg(gitDir, doneStatus)
+		case "post-merge":
+			_ = InstallPostMerge(gitDir, doneStatus)
+		}
+	}
 }
 
 func writeHook(gitDir, name, content string) error {

@@ -17,19 +17,24 @@ func setupModel(t *testing.T) tui.Model {
 	if err := s.Init(model.DefaultConfig()); err != nil {
 		t.Fatal(err)
 	}
+	now := time.Now()
 	tickets := []model.Ticket{
-		{ID: 1, Title: "First task", Status: "To Do", CreatedAt: time.Now()},
-		{ID: 2, Title: "WIP task", Status: "In Progress", CreatedAt: time.Now()},
-		{ID: 3, Title: "Completed task", Status: "Done", CreatedAt: time.Now()},
+		{ID: "00000001", Title: "First task", Status: "To Do", CreatedAt: now},
+		{ID: "00000002", Title: "WIP task", Status: "In Progress", CreatedAt: now.Add(time.Second)},
+		{ID: "00000003", Title: "Completed task", Status: "Done", CreatedAt: now.Add(2 * time.Second)},
 	}
-	if err := s.WriteTickets(tickets); err != nil {
-		t.Fatal(err)
+	for _, tk := range tickets {
+		if err := s.WriteTicket(tk); err != nil {
+			t.Fatal(err)
+		}
 	}
 	m, err := tui.New(s, dir)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	return m
+	// Use a wide terminal so ticket labels don't wrap and split title strings.
+	result, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 40})
+	return result.(tui.Model)
 }
 
 func sendKey(m tui.Model, key string) tui.Model {
