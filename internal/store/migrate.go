@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/frankcruz/tasklin/internal/model"
@@ -49,8 +48,12 @@ func (s *Store) migrateTickets() (bool, error) {
 		return false, err
 	}
 	for _, lt := range ltf.Tickets {
+		id, err := NewID()
+		if err != nil {
+			return false, fmt.Errorf("migrate tickets: generate id: %w", err)
+		}
 		t := model.Ticket{
-			ID:          strconv.Itoa(lt.ID),
+			ID:          id,
 			Title:       lt.Title,
 			Status:      lt.Status,
 			Labels:      lt.Labels,
@@ -78,8 +81,12 @@ func (s *Store) migrateDeleted() (bool, error) {
 		return false, err
 	}
 	for _, lt := range ltf.Tickets {
+		id, err := NewID()
+		if err != nil {
+			return false, fmt.Errorf("migrate deleted: generate id: %w", err)
+		}
 		t := model.Ticket{
-			ID:          strconv.Itoa(lt.ID),
+			ID:          id,
 			Title:       lt.Title,
 			Status:      lt.Status,
 			Labels:      lt.Labels,

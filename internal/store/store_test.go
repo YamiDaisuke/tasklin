@@ -149,20 +149,102 @@ func TestReadTickets_EmptyDir(t *testing.T) {
 
 func TestNewID(t *testing.T) {
 	hexRe := regexp.MustCompile(`^[0-9a-f]{8}$`)
-	id, err := store.NewID()
+	seen := make(map[string]bool, 200)
+	for i := 0; i < 200; i++ {
+		id, err := store.NewID()
+		if err != nil {
+			t.Fatalf("NewID call %d: %v", i, err)
+		}
+		if !hexRe.MatchString(id) {
+			t.Errorf("NewID returned %q, want 8 lowercase hex chars", id)
+		}
+		if seen[id] {
+			t.Errorf("NewID produced duplicate id %q after %d calls", id, i)
+		}
+		seen[id] = true
+	}
+}
+
+func TestWriteReadDeletedTicket(t *testing.T) {
+	s := newTempStore(t)
+	if err := s.Init(model.DefaultConfig()); err != nil {
+		t.Fatal(err)
+	}
+	tk := model.Ticket{ID: "dead0001", Title: "archived task", Status: "Done", CreatedAt: time.Now().UTC()}
+	if err := s.WriteDeletedTicket(tk); err != nil {
+		t.Fatalf("WriteDeletedTicket: %v", err)
+	}
+	got, err := s.ReadDeleted()
 	if err != nil {
-		t.Fatalf("NewID: %v", err)
+		t.Fatalf("ReadDeleted: %v", err)
 	}
-	if !hexRe.MatchString(id) {
-		t.Errorf("NewID returned %q, want 8 lowercase hex chars", id)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 deleted ticket, got %d", len(got))
 	}
-	// Two calls should produce different IDs.
-	id2, err := store.NewID()
+	if got[0].ID != tk.ID {
+		t.Errorf("ID mismatch: want %q, got %q", tk.ID, got[0].ID)
+	}
+	if got[0].Title != tk.Title {
+		t.Errorf("Title mismatch: want %q, got %q", tk.Title, got[0].Title)
+	}
+}
+
+func TestMigrateIfNeeded_Tickets(t *testing.T) {
+	dir := t.TempDir()
+	s := store.New(dir)
+	if err := s.Init(model.DefaultConfig()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write a legacy tickets.yaml with integer-ID tickets.
+	legacyYAML := `tickets:
+  - id: 1
+    title: First
+    status: To Do
+    created_at: 2024-01-01T00:00:00Z
+  - id: 2
+    title: Second
+    status: In Progress
+    created_at: 2024-01-02T00:00:00Z
+`
+	if err := os.WriteFile(filepath.Join(s.TodoPath(), "tickets.yaml"), []byte(legacyYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	migrated, err := s.MigrateIfNeeded()
 	if err != nil {
-		t.Fatalf("NewID (second call): %v", err)
+		t.Fatalf("MigrateIfNeeded: %v", err)
 	}
-	if id == id2 {
-		t.Error("two NewID calls returned the same value")
+	if !migrated {
+		t.Error("expected migration to have occurred")
+	}
+
+	tickets, err := s.ReadTickets()
+	if err != nil {
+		t.Fatalf("ReadTickets after migration: %v", err)
+	}
+	if len(tickets) != 2 {
+		t.Fatalf("expected 2 tickets after migration, got %d", len(tickets))
+	}
+
+	hexRe := regexp.MustCompile(`^[0-9a-f]{8}$`)
+	titles := map[string]bool{}
+	for _, tk := range tickets {
+		if !hexRe.MatchString(tk.ID) {
+			t.Errorf("migrated ticket has non-hex ID %q; git hooks require 8-char hex IDs", tk.ID)
+		}
+		titles[tk.Title] = true
+	}
+	if !titles["First"] || !titles["Second"] {
+		t.Error("migrated tickets are missing expected titles")
+	}
+
+	// Legacy file must have been renamed to .bak.
+	if _, err := os.Stat(filepath.Join(s.TodoPath(), "tickets.yaml")); !os.IsNotExist(err) {
+		t.Error("expected tickets.yaml to be removed after migration")
+	}
+	if _, err := os.Stat(filepath.Join(s.TodoPath(), "tickets.yaml.bak")); err != nil {
+		t.Error("expected tickets.yaml.bak to exist after migration")
 	}
 }
 
