@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"strconv"
 
 	"github.com/frankcruz/tasklin/internal/store"
 	"github.com/spf13/cobra"
@@ -17,10 +16,7 @@ var deleteCmd = &cobra.Command{
 }
 
 func runDelete(cmd *cobra.Command, args []string) error {
-	ticketID, err := strconv.Atoi(args[0])
-	if err != nil {
-		return fmt.Errorf("invalid ticket id: %s", args[0])
-	}
+	ticketID := args[0]
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -44,26 +40,19 @@ func runDelete(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if idx == -1 {
-		return fmt.Errorf("ticket %d not found", ticketID)
-	}
-
-	deleted, err := s.ReadDeleted()
-	if err != nil {
-		return err
+		return fmt.Errorf("ticket %s not found", ticketID)
 	}
 
 	title := tickets[idx].Title
-	deleted = append(deleted, tickets[idx])
-	tickets = append(tickets[:idx], tickets[idx+1:]...)
 
-	if err := s.WriteTickets(tickets); err != nil {
+	if err := s.WriteDeletedTicket(tickets[idx]); err != nil {
 		return err
 	}
-	if err := s.WriteDeleted(deleted); err != nil {
+	if err := s.DeleteTicketFile(ticketID); err != nil {
 		return err
 	}
 
-	fmt.Printf("#%d %s deleted\n", ticketID, title)
+	fmt.Printf("#%s %s deleted\n", ticketID, title)
 	return nil
 }
 

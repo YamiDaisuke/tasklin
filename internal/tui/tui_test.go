@@ -45,7 +45,6 @@ func sendKey(m tui.Model, key string) tui.Model {
 	case "left":
 		msg = tea.KeyMsg{Type: tea.KeyLeft}
 	case "shift+right":
-		msg = tea.KeyMsg{Type: tea.KeyRight, Alt: false, Runes: nil}
 		msg = tea.KeyMsg{Type: tea.KeyShiftRight}
 	case "shift+left":
 		msg = tea.KeyMsg{Type: tea.KeyShiftLeft}

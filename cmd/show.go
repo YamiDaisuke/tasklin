@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -53,10 +52,7 @@ func statusColor(name string) lipgloss.Color {
 }
 
 func runShow(cmd *cobra.Command, args []string) error {
-	ticketID, err := strconv.Atoi(args[0])
-	if err != nil {
-		return fmt.Errorf("invalid ticket id: %s", args[0])
-	}
+	ticketID := args[0]
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -85,11 +81,10 @@ func runShow(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if idx == -1 {
-		return fmt.Errorf("ticket %d not found", ticketID)
+		return fmt.Errorf("ticket %s not found", ticketID)
 	}
 	t := tickets[idx]
 
-	// Resolve status color from config.
 	dotColor := lipgloss.Color("252")
 	for _, st := range cfg.Statuses {
 		if st.Name == t.Status {
@@ -102,7 +97,7 @@ func runShow(cmd *cobra.Command, args []string) error {
 
 	fmt.Println()
 	fmt.Printf("  %s  %s\n",
-		showIDStyle.Render(fmt.Sprintf("#%d", t.ID)),
+		showIDStyle.Render(fmt.Sprintf("#%s", t.ID)),
 		showTitleStyle.Render(t.Title),
 	)
 	fmt.Println("  " + showSepStyle.Render(sep))

@@ -399,6 +399,12 @@ func (m Model) handleStatuses(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.mode == viewStatusEdit {
 		switch msg.String() {
 		case "esc":
+			// If we already applied the name change (step 1, existing status),
+			// tickets on disk are updated but config.yaml hasn't been written yet.
+			// Persist it now so disk stays consistent with in-memory state.
+			if !m.statusEditNew && m.statusEditStep == 1 {
+				_ = m.store.WriteConfig(m.cfg)
+			}
 			m.mode = viewStatuses
 			m.inputBuf = ""
 			m.inputCursor = 0
@@ -652,6 +658,7 @@ func (m Model) handleMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.moveSelected(targetStatus)
 		m.mode = viewBoard
 		m.rowIdx = 0
+		m.clampScroll()
 		return m, m.scheduleCommit(ticket, targetStatus)
 	}
 	return m, nil
@@ -909,6 +916,7 @@ func (m *Model) deleteSelected() {
 	if m.rowIdx > 0 {
 		m.rowIdx--
 	}
+	m.clampScroll()
 }
 
 func (m *Model) addLabelToTicket(ticketID string, label string) {
@@ -1846,7 +1854,7 @@ func (m Model) viewHelpOverlay() string {
 
 	type sc struct{ keys, desc string }
 	shortcuts := []sc{
-		{"← → / h l", "move between columns"},
+		{"← → / h", "move between columns"},
 		{"↑ ↓ / k j", "move between tickets"},
 		{"Shift+← →", "move ticket to adjacent column"},
 		{"Enter", "view ticket detail"},
@@ -2139,20 +2147,6 @@ func max(a, b int) int {
 		return a
 	}
 	return b
-}
-
-// filepath shim — avoid full import just for Base.
-var filepath = pathHelper{}
-
-type pathHelper struct{}
-
-func (pathHelper) Base(p string) string {
-	// simple last-segment extraction
-	p = strings.TrimRight(p, "/")
-	if idx := strings.LastIndex(p, "/"); idx >= 0 {
-		return p[idx+1:]
-	}
-	return p
 }
 
 // ColIdx returns the currently focused column index (exported for testing).
