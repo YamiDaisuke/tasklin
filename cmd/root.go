@@ -18,6 +18,10 @@ var rootCmd = &cobra.Command{
 	RunE:  runRoot,
 }
 
+func initVersion(version, commit, buildDate string) {
+	rootCmd.Version = fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, buildDate)
+}
+
 func runRoot(cmd *cobra.Command, args []string) error {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -48,7 +52,8 @@ func runRoot(cmd *cobra.Command, args []string) error {
 }
 
 // Execute runs the root command.
-func Execute() {
+func Execute(version, commit, buildDate string) {
+	initVersion(version, commit, buildDate)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

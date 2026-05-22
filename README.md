@@ -20,11 +20,18 @@ A lightweight, portable CLI tool for managing personal project backlogs. Data is
 
 ## Requirements
 
-- Go 1.24+
+- Go 1.24+ (source installs only)
 
 ---
 
 ## Installation
+
+### Homebrew (macOS and Linux)
+
+```sh
+brew tap yamidaisuke/tasklin https://github.com/yamidaisuke/tasklin
+brew install tasklin
+```
 
 ### From source
 
