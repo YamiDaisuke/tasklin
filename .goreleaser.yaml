@@ -67,4 +67,3 @@ release:
     owner: yamidaisuke
     name: tasklin
   draft: false
-  generate_release_notes: true
