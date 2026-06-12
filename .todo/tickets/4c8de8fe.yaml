@@ -1,0 +1,20 @@
+id: 4c8de8fe
+title: Add visual indicator for empty column focus
+status: Done
+created_at: 2026-03-05T18:16:23.408081Z
+transitions:
+    - from: In Progress
+      to: To Do
+      at: 2026-03-05T18:20:44.513255Z
+    - from: To Do
+      to: In Progress
+      at: 2026-03-05T18:20:45.040873Z
+    - from: In Progress
+      to: Done
+      at: 2026-03-05T18:20:45.419464Z
+    - from: Done
+      to: In Progress
+      at: 2026-03-05T18:20:47.872319Z
+    - from: In Progress
+      to: Done
+      at: 2026-03-05T18:29:33.078038Z

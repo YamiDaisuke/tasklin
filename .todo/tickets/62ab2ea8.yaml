@@ -1,0 +1,17 @@
+id: 62ab2ea8
+title: Add max/min col size and horizontal scroll if needed
+status: Done
+created_at: 2026-03-10T02:57:43.18986Z
+transitions:
+    - from: Backlog
+      to: In Progress
+      at: 2026-03-19T13:32:55.418707Z
+    - from: In Progress
+      to: Backlog
+      at: 2026-03-19T13:32:58.295255Z
+    - from: Backlog
+      to: In Progress
+      at: 2026-03-19T13:33:12.231464Z
+    - from: In Progress
+      to: Done
+      at: 2026-03-19T13:46:44.512629Z

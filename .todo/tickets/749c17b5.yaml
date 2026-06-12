@@ -1,0 +1,11 @@
+id: 749c17b5
+title: Add delay between moving a ticket to done and auto-commit for better UX
+status: Done
+created_at: 2026-03-06T02:15:47.761191Z
+transitions:
+    - from: Backlog
+      to: In Progress
+      at: 2026-03-10T02:21:01.621539Z
+    - from: In Progress
+      to: Done
+      at: 2026-03-10T02:27:00.45183Z

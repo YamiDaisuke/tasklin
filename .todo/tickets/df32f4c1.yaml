@@ -1,0 +1,11 @@
+id: df32f4c1
+title: Auto commit if a ticket is moved to Done
+status: Done
+created_at: 2026-03-05T18:29:55.75529Z
+transitions:
+    - from: To Do
+      to: In Progress
+      at: 2026-03-05T21:01:36.435163Z
+    - from: In Progress
+      to: Done
+      at: 2026-03-05T21:02:13.910029Z

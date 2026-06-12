@@ -1,0 +1,17 @@
+id: 21f96b06
+title: Add keyboard navigation while editing ticket titles
+status: Done
+created_at: 2026-03-10T01:43:27.071029Z
+transitions:
+    - from: Backlog
+      to: In Progress
+      at: 2026-03-19T13:13:18.017954Z
+    - from: In Progress
+      to: Done
+      at: 2026-03-19T13:25:49.821243Z
+    - from: Done
+      to: In Progress
+      at: 2026-03-19T13:26:21.810673Z
+    - from: In Progress
+      to: Done
+      at: 2026-03-19T13:26:22.522666Z

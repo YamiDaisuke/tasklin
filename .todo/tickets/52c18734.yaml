@@ -1,0 +1,14 @@
+id: 52c18734
+title: Avoid auto-transition to same status
+status: Done
+created_at: 2026-03-05T20:38:23.833321Z
+transitions:
+    - from: To Do
+      to: In Progress
+      at: 2026-03-05T20:41:09.305487Z
+    - from: In Progress
+      to: Done
+      at: 2026-03-05T20:42:38.587145Z
+    - from: Done
+      to: Done
+      at: 2026-03-05T20:43:12.600229Z

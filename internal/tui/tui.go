@@ -61,6 +61,7 @@ type Model struct {
 	rowIdx         int            // focused row within column
 	boardRowIdx    int            // rowIdx saved before entering move mode
 	colScroll      []int          // per-column scroll offsets
+	colRowIdx      []int          // per-column saved row positions
 	committing     bool           // true while waiting to hand off to git
 	cfgRowIdx      int            // focused row in config screen
 	statusRowIdx   int            // focused row in statuses screen
@@ -116,6 +117,7 @@ func New(s *store.Store, projectDir string) (Model, error) {
 		tickets:     tickets,
 		statuses:    statuses,
 		colScroll:   make([]int, len(statuses)),
+		colRowIdx:   make([]int, len(statuses)),
 		branch:      branch,
 		projectDir:  projectDir,
 		width:       80,
@@ -205,15 +207,25 @@ func (m Model) handleBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "left", "h":
 		if m.colIdx > 0 {
+			m.colRowIdx[m.colIdx] = m.rowIdx
 			m.colIdx--
-			m.rowIdx = 0
+			m.rowIdx = m.colRowIdx[m.colIdx]
+			destCol := m.ticketsInCol(m.statuses[m.colIdx].Name)
+			if m.rowIdx >= len(destCol) {
+				m.rowIdx = max(0, len(destCol)-1)
+			}
 			m.clampScroll()
 			m.clampColOffset()
 		}
 	case "right":
 		if m.colIdx < len(cols)-1 {
+			m.colRowIdx[m.colIdx] = m.rowIdx
 			m.colIdx++
-			m.rowIdx = 0
+			m.rowIdx = m.colRowIdx[m.colIdx]
+			destCol := m.ticketsInCol(m.statuses[m.colIdx].Name)
+			if m.rowIdx >= len(destCol) {
+				m.rowIdx = max(0, len(destCol)-1)
+			}
 			m.clampScroll()
 			m.clampColOffset()
 		}
@@ -262,8 +274,13 @@ func (m Model) handleBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			targetStatus := m.statuses[m.colIdx-1].Name
 			m.boardRowIdx = m.rowIdx
 			m.moveSelected(targetStatus)
+			m.colRowIdx[m.colIdx] = m.rowIdx
 			m.colIdx--
-			m.rowIdx = 0
+			m.rowIdx = m.colRowIdx[m.colIdx]
+			destCol := m.ticketsInCol(m.statuses[m.colIdx].Name)
+			if m.rowIdx >= len(destCol) {
+				m.rowIdx = max(0, len(destCol)-1)
+			}
 			m.clampScroll()
 			m.clampColOffset()
 			return m, m.scheduleCommit(ticket, targetStatus)
@@ -275,8 +292,13 @@ func (m Model) handleBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			targetStatus := m.statuses[m.colIdx+1].Name
 			m.boardRowIdx = m.rowIdx
 			m.moveSelected(targetStatus)
+			m.colRowIdx[m.colIdx] = m.rowIdx
 			m.colIdx++
-			m.rowIdx = 0
+			m.rowIdx = m.colRowIdx[m.colIdx]
+			destCol := m.ticketsInCol(m.statuses[m.colIdx].Name)
+			if m.rowIdx >= len(destCol) {
+				m.rowIdx = max(0, len(destCol)-1)
+			}
 			m.clampScroll()
 			m.clampColOffset()
 			return m, m.scheduleCommit(ticket, targetStatus)
@@ -980,6 +1002,7 @@ func (m *Model) addStatus(name, color string) {
 	})
 	m.statuses = store.SortedStatuses(m.cfg.Statuses)
 	m.colScroll = make([]int, len(m.statuses))
+	m.colRowIdx = make([]int, len(m.statuses))
 }
 
 func (m *Model) updateStatusName(idx int, name string) {
@@ -1025,6 +1048,7 @@ func (m *Model) deleteStatus(idx int) {
 	m.cfg.Statuses = out
 	m.statuses = store.SortedStatuses(m.cfg.Statuses)
 	m.colScroll = make([]int, len(m.statuses))
+	m.colRowIdx = make([]int, len(m.statuses))
 	_ = m.store.WriteConfig(m.cfg)
 }
 
